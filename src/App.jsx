@@ -5,19 +5,19 @@ import {
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
-const EGITMENLER = [
+const VARSAYILAN_EGITMENLER = [
   { id: 'meryem', isim: 'Meryem İnli' },
   { id: 'gulsen', isim: 'Gülsen Kahraman' },
   { id: 'ahmet', isim: 'Ahmet Önür' },
 ];
 
-const ARACLAR = [
+const VARSAYILAN_ARACLAR = [
   { id: 'sk', isim: '34 SK' },
   { id: 'bhh', isim: '34 BHH' },
   { id: 'hge', isim: '34 HGE' },
 ];
 
-const PERSONEL = [
+const VARSAYILAN_PERSONEL = [
   { id: 'sevgi', isim: 'Sevgi Karakuş', gorev: 'Müdür' },
   { id: 'gulten', isim: 'Gülten Hanım', gorev: 'Temizlikçi' },
   { id: 'sercan', isim: 'Sercan Polat', gorev: 'Motosiklet Hocası' },
@@ -26,6 +26,21 @@ const PERSONEL = [
   { id: 'ahmet_p', isim: 'Ahmet Önür', gorev: 'Direksiyon Hocası' },
   { id: 'parttime', isim: 'Part-Time Hoca (isim belirt)', gorev: 'Serbest' },
 ];
+
+const depoYukle = (anahtar, varsayilan) => {
+  try {
+    const veri = localStorage.getItem(anahtar);
+    return veri ? JSON.parse(veri) : varsayilan;
+  } catch {
+    return varsayilan;
+  }
+};
+
+const depoKaydet = (anahtar, deger) => {
+  try {
+    localStorage.setItem(anahtar, JSON.stringify(deger));
+  } catch {}
+};
 
 const GELIR_KATEGORILERI = [
   { id: 'kursiyer', isim: 'Kursiyer Ödemesi' },
@@ -38,16 +53,24 @@ const GELIR_KATEGORILERI = [
 const GIDER_KATEGORILERI = [
   { id: 'kira', isim: 'Kira' },
   { id: 'personel', isim: 'Personel Maaşı' },
-  { id: 'yakit', isim: 'Yakıt/Bakım (Araç)' },
+  { id: 'yakit', isim: 'Yakıt' },
+  { id: 'bakim', isim: 'Bakım' },
+  { id: 'yikama', isim: 'Yıkama' },
   { id: 'sgk', isim: 'SGK Ödemesi' },
   { id: 'vergi', isim: 'Vergi Ödemesi' },
   { id: 'arac_bakim', isim: 'Araç Bakım (Genel)' },
   { id: 'mutfak', isim: 'Mutfak/Temizlik/Kırtasiye' },
   { id: 'faturalar', isim: 'Faturalar (Elektrik/Su/İnternet)' },
   { id: 'reklam', isim: 'Reklam' },
+  { id: 'harc_odeme', isim: 'Harç Ödemesi (Devlete)' },
   { id: 'kisisel', isim: 'Kişisel Çekim' },
   { id: 'gecici_cekim', isim: 'Geçici Çekim / Avans' },
   { id: 'diger', isim: 'Diğer' },
+];
+
+const SINAV_TARIHLERI = [
+  '6-7 Eylül', '13-14 Eylül', '20-21 Eylül', '27-28 Eylül',
+  '4-5 Ekim', '11-12 Ekim', '18-19 Ekim', '25-26 Ekim',
 ];
 
 const ODEME_TIPLERI = [
@@ -63,7 +86,13 @@ const ISLEM_YAPAN = [
 
 const RAPOR_PIN = '1234';
 
-const bugun = () => new Date().toISOString().slice(0, 10);
+const bugun = () => {
+  const d = new Date();
+  const yil = d.getFullYear();
+  const ay = String(d.getMonth() + 1).padStart(2, '0');
+  const gun = String(d.getDate()).padStart(2, '0');
+  return `${yil}-${ay}-${gun}`;
+};
 const ayAdi = (tarih) => new Date(tarih).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
 const ayAnahtari = (tarih) => tarih.slice(0, 7);
 const fmt = (n) => (n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' ₺';
@@ -116,6 +145,7 @@ const dbdenKayit = (r) => ({
   odeme: r.odeme,
   islemYapan: r.islem_yapan || '',
   not: r.not_metni || '',
+  sinavTarihi: r.sinav_tarihi || '',
 });
 
 const kayitToDb = (k) => ({
@@ -130,12 +160,82 @@ const kayitToDb = (k) => ({
   odeme: k.odeme,
   islem_yapan: k.islemYapan || null,
   not_metni: k.not || null,
+  sinav_tarihi: k.sinavTarihi || null,
 });
 
 export default function MuhasebeApp() {
   const [kayitlar, setKayitlar] = useState([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hataMesaji, setHataMesaji] = useState(null);
+
+  // Eğitmen / Araç / Personel listeleri: Supabase 'ayarlar' tablosunda saklanır (tüm cihazlarda ortak)
+  const [EGITMENLER, setEGITMENLER] = useState(() => depoYukle('skk_egitmenler', VARSAYILAN_EGITMENLER));
+  const [ARACLAR, setARACLAR] = useState(() => depoYukle('skk_araclar', VARSAYILAN_ARACLAR));
+  const [PERSONEL, setPERSONEL] = useState(() => depoYukle('skk_personel', VARSAYILAN_PERSONEL));
+  const ayarlarYuklendi = React.useRef(false);
+
+  // İlk yüklemede Supabase'den ayarları çek (yoksa varsayılanları oraya yaz)
+  useEffect(() => {
+    const ayarlariYukle = async () => {
+      const { data, error } = await supabase.from('ayarlar').select('*');
+      if (error || !data) { ayarlarYuklendi.current = true; return; }
+
+      const map = {};
+      data.forEach((row) => { map[row.id] = row.veri; });
+
+      if (map.egitmenler) setEGITMENLER(map.egitmenler);
+      else await supabase.from('ayarlar').upsert({ id: 'egitmenler', veri: VARSAYILAN_EGITMENLER });
+
+      if (map.araclar) setARACLAR(map.araclar);
+      else await supabase.from('ayarlar').upsert({ id: 'araclar', veri: VARSAYILAN_ARACLAR });
+
+      if (map.personel) setPERSONEL(map.personel);
+      else await supabase.from('ayarlar').upsert({ id: 'personel', veri: VARSAYILAN_PERSONEL });
+
+      ayarlarYuklendi.current = true;
+    };
+    ayarlariYukle();
+  }, []);
+
+  // Değişiklik olunca Supabase'e ve yerel önbelleğe kaydet (ilk yükleme tamamlanmadan kaydetme)
+  useEffect(() => {
+    if (!ayarlarYuklendi.current) return;
+    depoKaydet('skk_egitmenler', EGITMENLER);
+    supabase.from('ayarlar').upsert({ id: 'egitmenler', veri: EGITMENLER }).then(({ error }) => {
+      if (error) setHataMesaji('Eğitmen listesi kaydedilemedi: ' + error.message);
+    });
+  }, [EGITMENLER]);
+
+  useEffect(() => {
+    if (!ayarlarYuklendi.current) return;
+    depoKaydet('skk_araclar', ARACLAR);
+    supabase.from('ayarlar').upsert({ id: 'araclar', veri: ARACLAR }).then(({ error }) => {
+      if (error) setHataMesaji('Araç listesi kaydedilemedi: ' + error.message);
+    });
+  }, [ARACLAR]);
+
+  useEffect(() => {
+    if (!ayarlarYuklendi.current) return;
+    depoKaydet('skk_personel', PERSONEL);
+    supabase.from('ayarlar').upsert({ id: 'personel', veri: PERSONEL }).then(({ error }) => {
+      if (error) setHataMesaji('Personel listesi kaydedilemedi: ' + error.message);
+    });
+  }, [PERSONEL]);
+
+  // Ayarlar başka bir cihazda değişirse gerçek zamanlı yansıt
+  useEffect(() => {
+    const kanal = supabase
+      .channel('ayarlar-degisiklikleri')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ayarlar' }, (payload) => {
+        const row = payload.new;
+        if (!row) return;
+        if (row.id === 'egitmenler') setEGITMENLER(row.veri);
+        if (row.id === 'araclar') setARACLAR(row.veri);
+        if (row.id === 'personel') setPERSONEL(row.veri);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(kanal); };
+  }, []);
 
   // İlk yüklemede Supabase'den kayıtları çek
   useEffect(() => {
@@ -156,6 +256,27 @@ export default function MuhasebeApp() {
     yukle();
   }, []);
 
+  // Gerçek zamanlı senkron: başka bir cihazdan kayıt eklenince/silinince otomatik güncelle
+  useEffect(() => {
+    const kanal = supabase
+      .channel('kayitlar-degisiklikleri')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kayitlar' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setKayitlar((onceki) => {
+            if (onceki.some((k) => k.id === payload.new.id)) return onceki;
+            return [...onceki, dbdenKayit(payload.new)];
+          });
+        } else if (payload.eventType === 'DELETE') {
+          setKayitlar((onceki) => onceki.filter((k) => k.id !== payload.old.id));
+        } else if (payload.eventType === 'UPDATE') {
+          setKayitlar((onceki) => onceki.map((k) => (k.id === payload.new.id ? dbdenKayit(payload.new) : k)));
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(kanal); };
+  }, []);
+
 
   // Görünüm: 'giris' (sekreter) | 'rapor' (sahip, pin korumalı)
   const [ekran, setEkran] = useState('giris');
@@ -166,7 +287,7 @@ export default function MuhasebeApp() {
 
   const [tip, setTip] = useState('gelir');
   const [form, setForm] = useState({
-    tarih: bugun(), aciklama: '', kategori: '', tutar: '', harcAlinan: '', personel: '', egitmen: '', arac: '', odeme: 'nakit', islemYapan: 'sevgi', not: '',
+    tarih: bugun(), aciklama: '', kategori: '', tutar: '', harcAlinan: '', sinavTarihi: '', personel: '', egitmen: '', arac: '', odeme: 'nakit', islemYapan: 'sevgi', not: '',
   });
   const [secilenAy, setSecilenAy] = useState(ayAnahtari(bugun()));
   const [gorunum, setGorunum] = useState('ozet');
@@ -206,6 +327,7 @@ export default function MuhasebeApp() {
       odeme: form.odeme,
       islemYapan: form.islemYapan,
       not: form.not,
+      sinavTarihi: tip === 'gelir' && form.kategori === 'harc' ? form.sinavTarihi : '',
     };
 
     const { data, error } = await supabase
@@ -224,7 +346,7 @@ export default function MuhasebeApp() {
     setSonKayitMesaji(`${tip === 'gelir' ? 'Gelir' : 'Gider'} kaydedildi: ${fmt(tutar)}`);
     setTimeout(() => setSonKayitMesaji(null), 2200);
 
-    setForm({ tarih: bugun(), aciklama: '', kategori: '', tutar: '', harcAlinan: '', personel: '', egitmen: '', arac: '', odeme: 'nakit', islemYapan: form.islemYapan, not: '' });
+    setForm({ tarih: bugun(), aciklama: '', kategori: '', tutar: '', harcAlinan: '', sinavTarihi: '', personel: '', egitmen: '', arac: '', odeme: 'nakit', islemYapan: form.islemYapan, not: '' });
   };
 
   const sil = async (id) => {
@@ -257,6 +379,20 @@ export default function MuhasebeApp() {
   const ozelDersKursaKalan = buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'ozel_ders').reduce((s, k) => s + k.kalan, 0);
   const kisiselCekim = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'kisisel').reduce((s, k) => s + k.kalan, 0);
   const geciciCekim = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'gecici_cekim').reduce((s, k) => s + k.kalan, 0);
+
+  // Devlete Borç Harç: TÜM ZAMANLAR üzerinden - tahsil edilen harç (tutar-kalan farkı) eksi devlete ödenenler
+  const tumZamanlarDevletePay = kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc').reduce((s, k) => s + (k.tutar - k.kalan), 0);
+  const tumZamanlarHarcOdemesi = kayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'harc_odeme').reduce((s, k) => s + k.kalan, 0);
+  const devleteBorcHarc = tumZamanlarDevletePay - tumZamanlarHarcOdemesi;
+
+  // Sınav tarihi bazlı harç sayacı (bu ay)
+  const sinavTarihiSayaci = useMemo(() => {
+    const map = {};
+    buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi).forEach((k) => {
+      map[k.sinavTarihi] = (map[k.sinavTarihi] || 0) + 1;
+    });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [buAyKayitlar]);
 
   const kasaHesapla = (kayitlarListesi) => {
     const sonuc = { nakit: 0, havale: 0, pos: 0 };
@@ -345,6 +481,69 @@ export default function MuhasebeApp() {
     setSecilenAy(yeniKey);
     setSecilenGun(null);
   };
+
+  const ayiExcelOlarakIndir = () => {
+    const basliklar = ['Tarih', 'Tip', 'Kategori', 'Açıklama', 'Tutar', 'Kalan (Net)', 'Eğitmen', 'Araç', 'Ödeme', 'İşlemi Yapan', 'Not'];
+    const satirlar = buAyKayitlar.map((k) => [
+      k.tarih,
+      k.tip === 'gelir' ? 'Gelir' : 'Gider',
+      katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI),
+      k.aciklama,
+      k.tutar,
+      k.kalan,
+      egitmenAdi(k.egitmen),
+      aracAdi(k.arac),
+      ODEME_TIPLERI.find((o) => o.id === k.odeme)?.isim || '',
+      ISLEM_YAPAN.find((p) => p.id === k.islemYapan)?.isim || '',
+      k.not || '',
+    ]);
+
+    const ozet = [
+      [], ['ÖZET', ayAdi(secilenAy + '-01')],
+      ['Net Gelir', toplamGelir], ['Gider', toplamGider], ['Net Kâr/Zarar', net],
+      ['Nakit Kasa', kasaAy.nakit], ['Havale Kasa', kasaAy.havale], ['POS Kasa', kasaAy.pos],
+    ];
+
+    const hucreTemizle = (v) => {
+      const s = String(v ?? '');
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    };
+
+    const tumSatirlar = [basliklar, ...satirlar, ...ozet];
+    const csv = '\uFEFF' + tumSatirlar.map((satir) => satir.map(hucreTemizle).join(',')).join('\r\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kasa-raporu-${secilenAy}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const egitmenAdiGuncelle = (id, yeniIsim) => setEGITMENLER(EGITMENLER.map((e) => e.id === id ? { ...e, isim: yeniIsim } : e));
+  const egitmenSil = (id) => setEGITMENLER(EGITMENLER.filter((e) => e.id !== id));
+  const egitmenEkle = (isim) => {
+    if (!isim.trim()) return;
+    const id = isim.toLowerCase().replace(/[^a-z0-9ğüşıöç]/gi, '_') + '_' + Date.now();
+    setEGITMENLER([...EGITMENLER, { id, isim: isim.trim() }]);
+  };
+
+  const aracAdiGuncelle = (id, yeniIsim) => setARACLAR(ARACLAR.map((a) => a.id === id ? { ...a, isim: yeniIsim } : a));
+  const aracSil = (id) => setARACLAR(ARACLAR.filter((a) => a.id !== id));
+  const aracEkle = (isim) => {
+    if (!isim.trim()) return;
+    const id = isim.toLowerCase().replace(/[^a-z0-9ğüşıöç]/gi, '_') + '_' + Date.now();
+    setARACLAR([...ARACLAR, { id, isim: isim.trim() }]);
+  };
+
+  const [yeniEgitmenAdi, setYeniEgitmenAdi] = useState('');
+  const [yeniAracAdi, setYeniAracAdi] = useState('');
 
   const egitmenAdi = (id) => EGITMENLER.find((e) => e.id === id)?.isim || '';
   const aracAdi = (id) => ARACLAR.find((a) => a.id === id)?.isim || '';
@@ -546,13 +745,18 @@ export default function MuhasebeApp() {
                   placeholder="örn: 2000"
                   value={form.harcAlinan}
                   onChange={(e) => setForm({ ...form, harcAlinan: e.target.value })}
-                  style={inputStyle}
+                  style={{ ...inputStyle, marginBottom: 14 }}
                 />
                 {form.tutar && (
-                  <div style={{ ...hintBox, marginTop: 8 }}>
+                  <div style={{ ...hintBox, marginBottom: 14 }}>
                     Kursa kalan: <strong style={{ color: C.mint }}>{fmt((parseFloat(form.tutar) || 0) - (parseFloat(form.harcAlinan) || 0))}</strong>
                   </div>
                 )}
+                <label style={labelStyle}>Sınav Tarihi (opsiyonel)</label>
+                <select value={form.sinavTarihi} onChange={(e) => setForm({ ...form, sinavTarihi: e.target.value })} style={inputStyle}>
+                  <option value="">Seçilmedi</option>
+                  {SINAV_TARIHLERI.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
             )}
 
@@ -565,6 +769,12 @@ export default function MuhasebeApp() {
             {tip === 'gider' && form.kategori === 'gecici_cekim' && (
               <div style={{ ...hintBox, marginBottom: 14, borderColor: C.gold + '55' }}>
                 Bu tutar kâr/zarar hesabına girmez, sadece kasadan çıkar. Sonradan ne için harcandığını ayrı kayıtlarla gir.
+              </div>
+            )}
+
+            {tip === 'gider' && form.kategori === 'harc_odeme' && (
+              <div style={{ ...hintBox, marginBottom: 14, borderColor: C.gold + '55' }}>
+                Devlete yatırdığın harç tutarını gir — "Devlete Borç Harç" rakamından bu kadar düşülecek.
               </div>
             )}
 
@@ -787,6 +997,7 @@ export default function MuhasebeApp() {
             { k: 'ozet', l: 'Aylık Özet' },
             { k: 'gunluk', l: 'Günlük Özet' },
             { k: 'egitmen', l: 'Eğitmen/Araç' },
+            { k: 'ayarlar', l: 'Ayarlar' },
           ].map((v) => (
             <button
               key={v.k}
@@ -806,6 +1017,17 @@ export default function MuhasebeApp() {
 
         {gorunum === 'ozet' && (
           <>
+            <button
+              onClick={ayiExcelOlarakIndir}
+              style={{
+                width: '100%', padding: '12px', borderRadius: 12, marginBottom: 14, cursor: 'pointer',
+                background: C.panel, border: `1px solid ${C.border}`, color: C.textDim,
+                fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}
+            >
+              <Receipt size={15} /> Bu Ayı Excel (CSV) Olarak İndir
+            </button>
+
             {/* Hero kart */}
             <div
               className="scka-card"
@@ -865,6 +1087,35 @@ export default function MuhasebeApp() {
                 <div style={{ fontSize: 11, color: C.mint, marginTop: 3, fontWeight: 600 }}>Kursa: {fmt(ozelDersKursaKalan)}</div>
               </div>
             </div>
+
+            {/* Devlete Borç Harç - tüm zamanlar üzerinden, ödenince düşer */}
+            {devleteBorcHarc !== 0 && (
+              <div style={{
+                background: devleteBorcHarc > 0 ? 'rgba(240,200,104,0.08)' : C.panel,
+                borderRadius: 16, padding: '14px 16px', marginBottom: 14,
+                border: `1px solid ${devleteBorcHarc > 0 ? 'rgba(240,200,104,0.3)' : C.border}`,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <div>
+                  <div style={{ color: C.gold, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Devlete Borç Harç</div>
+                  <div style={{ color: C.textFaint, fontSize: 10, marginTop: 2 }}>Tüm zamanlar · ödeyince "Harç Ödemesi" gideri olarak gir</div>
+                </div>
+                <div style={{ fontWeight: 800, fontSize: 17, color: C.gold, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(devleteBorcHarc)}</div>
+              </div>
+            )}
+
+            {/* Sınav tarihi bazlı harç sayacı */}
+            {sinavTarihiSayaci.length > 0 && (
+              <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Sınav Tarihine Göre Harç Yatıran Sayısı</div>
+                {sinavTarihiSayaci.map(([tarih, sayi]) => (
+                  <div key={tarih} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                    <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{tarih}</span>
+                    <span style={{ fontWeight: 800, fontSize: 14, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>{sayi} kişi</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {(kisiselCekim > 0 || geciciCekim > 0) && (
               <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
@@ -1080,6 +1331,84 @@ export default function MuhasebeApp() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {gorunum === 'ayarlar' && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 14, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Eğitmenler</div>
+              {EGITMENLER.map((e) => (
+                <div key={e.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+                  <input
+                    type="text"
+                    value={e.isim}
+                    onChange={(ev) => egitmenAdiGuncelle(e.id, ev.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  <button
+                    onClick={() => egitmenSil(e.id)}
+                    style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 10, color: C.rose, cursor: 'pointer', padding: '10px 12px' }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <input
+                  type="text"
+                  placeholder="Yeni eğitmen adı..."
+                  value={yeniEgitmenAdi}
+                  onChange={(e) => setYeniEgitmenAdi(e.target.value)}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button
+                  onClick={() => { egitmenEkle(yeniEgitmenAdi); setYeniEgitmenAdi(''); }}
+                  style={{ background: C.mint, border: 'none', borderRadius: 10, color: '#062017', cursor: 'pointer', padding: '0 16px', fontWeight: 800 }}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 14, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Araçlar (Plakalar)</div>
+              {ARACLAR.map((a) => (
+                <div key={a.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+                  <input
+                    type="text"
+                    value={a.isim}
+                    onChange={(ev) => aracAdiGuncelle(a.id, ev.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  <button
+                    onClick={() => aracSil(a.id)}
+                    style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 10, color: C.rose, cursor: 'pointer', padding: '10px 12px' }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <input
+                  type="text"
+                  placeholder="Yeni plaka..."
+                  value={yeniAracAdi}
+                  onChange={(e) => setYeniAracAdi(e.target.value)}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button
+                  onClick={() => { aracEkle(yeniAracAdi); setYeniAracAdi(''); }}
+                  style={{ background: C.mint, border: 'none', borderRadius: 10, color: '#062017', cursor: 'pointer', padding: '0 16px', fontWeight: 800 }}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ ...hintBox, fontSize: 12 }}>
+              Değişiklikler tüm cihazlara otomatik yansır.
+            </div>
           </div>
         )}
 
