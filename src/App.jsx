@@ -377,7 +377,7 @@ export default function MuhasebeApp() {
 
   // Net hesap: "Geçici Çekim/Avans" hiçbir şekilde kâr/zarara dahil edilmez
   // Veresiye (ödenmemiş) harç kayıtları da gelire dahil edilmez, ödenince otomatik dahil olur
-  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.odendiMi !== false;
+  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.kategori !== 'harc_odeme' && k.odendiMi !== false;
 
   const toplamGelir = buAyKayitlar.filter((k) => k.tip === 'gelir' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
   const toplamGider = buAyKayitlar.filter((k) => k.tip === 'gider' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
@@ -1238,14 +1238,15 @@ export default function MuhasebeApp() {
                 {giderKategorileri.map((g) => {
                   const acik = secilenGiderKat === g.id;
                   const detayKayitlari = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === g.id);
+                  const kzHaric = g.id === 'gecici_cekim' || g.id === 'harc_odeme';
                   return (
                     <div key={g.id} style={{ marginBottom: 12 }}>
                       <div
                         onClick={() => setSecilenGiderKat(acik ? null : g.id)}
                         style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5, cursor: 'pointer' }}
                       >
-                        <span style={{ color: g.id === 'gecici_cekim' ? C.gold : C.text, fontWeight: 600 }}>
-                          {g.isim}{g.id === 'gecici_cekim' ? ' (k/z hariç)' : ''}
+                        <span style={{ color: kzHaric ? C.gold : C.text, fontWeight: 600 }}>
+                          {g.isim}{kzHaric ? ' (k/z hariç)' : ''}
                         </span>
                         <span style={{ fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(g.tutar)}</span>
                       </div>
@@ -1253,7 +1254,7 @@ export default function MuhasebeApp() {
                         onClick={() => setSecilenGiderKat(acik ? null : g.id)}
                         style={{ height: 7, background: C.bg, borderRadius: 4, overflow: 'hidden', cursor: 'pointer' }}
                       >
-                        <div style={{ height: '100%', width: `${(g.tutar / maxGiderKat) * 100}%`, background: g.id === 'gecici_cekim' ? `linear-gradient(90deg, #8A6E2E, ${C.gold})` : `linear-gradient(90deg, ${C.roseDeep}, ${C.rose})`, borderRadius: 4 }} />
+                        <div style={{ height: '100%', width: `${(g.tutar / maxGiderKat) * 100}%`, background: kzHaric ? `linear-gradient(90deg, #8A6E2E, ${C.gold})` : `linear-gradient(90deg, ${C.roseDeep}, ${C.rose})`, borderRadius: 4 }} />
                       </div>
                       {acik && (
                         <div style={{ marginTop: 10, padding: '10px 12px', background: C.bg, borderRadius: 10, border: `1px solid ${C.border}` }}>
