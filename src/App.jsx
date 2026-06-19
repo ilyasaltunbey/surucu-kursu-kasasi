@@ -141,6 +141,7 @@ const dbdenKayit = (r) => ({
   islemYapan: r.islem_yapan || '',
   not: r.not_metni || '',
   sinavTarihi: r.sinav_tarihi || '',
+  odendiMi: r.odendi_mi !== false,
 });
 
 const kayitToDb = (k) => ({
@@ -156,6 +157,7 @@ const kayitToDb = (k) => ({
   islem_yapan: k.islemYapan || null,
   not_metni: k.not || null,
   sinav_tarihi: k.sinavTarihi || null,
+  odendi_mi: k.odendiMi !== false,
 });
 
 export default function MuhasebeApp() {
@@ -282,7 +284,7 @@ export default function MuhasebeApp() {
 
   const [tip, setTip] = useState('gelir');
   const [form, setForm] = useState({
-    tarih: bugun(), aciklama: '', kategori: '', tutar: '', harcAlinan: '', sinavTarihi: '', personel: '', egitmen: '', arac: '', odeme: 'nakit', islemYapan: 'sevgi', not: '',
+    tarih: bugun(), aciklama: '', kategori: '', tutar: '', harcAlinan: '', sinavTarihi: '', odendiMi: true, personel: '', egitmen: '', arac: '', odeme: 'nakit', islemYapan: 'sevgi', not: '',
   });
   const [secilenAy, setSecilenAy] = useState(ayAnahtari(bugun()));
   const [gorunum, setGorunum] = useState('ozet');
@@ -323,6 +325,7 @@ export default function MuhasebeApp() {
       islemYapan: form.islemYapan,
       not: form.not,
       sinavTarihi: tip === 'gelir' && form.kategori === 'harc' ? form.sinavTarihi : '',
+      odendiMi: tip === 'gelir' && form.kategori === 'harc' ? form.odendiMi : true,
     };
 
     const { data, error } = await supabase
@@ -341,7 +344,7 @@ export default function MuhasebeApp() {
     setSonKayitMesaji(`${tip === 'gelir' ? 'Gelir' : 'Gider'} kaydedildi: ${fmt(tutar)}`);
     setTimeout(() => setSonKayitMesaji(null), 2200);
 
-    setForm({ tarih: bugun(), aciklama: '', kategori: '', tutar: '', harcAlinan: '', sinavTarihi: '', personel: '', egitmen: '', arac: '', odeme: 'nakit', islemYapan: form.islemYapan, not: '' });
+    setForm({ tarih: bugun(), aciklama: '', kategori: '', tutar: '', harcAlinan: '', sinavTarihi: '', odendiMi: true, personel: '', egitmen: '', arac: '', odeme: 'nakit', islemYapan: form.islemYapan, not: '' });
   };
 
   const sil = async (id) => {
@@ -353,6 +356,17 @@ export default function MuhasebeApp() {
     setKayitlar(kayitlar.filter((k) => k.id !== id));
   };
 
+  const harcOdendiIsaretle = async (id) => {
+    const { error } = await supabase.from('kayitlar').update({ odendi_mi: true }).eq('id', id);
+    if (error) {
+      setHataMesaji('Güncellenemedi: ' + error.message);
+      return;
+    }
+    setKayitlar(kayitlar.map((k) => (k.id === id ? { ...k, odendiMi: true } : k)));
+    setSonKayitMesaji('Harç ödendi olarak işaretlendi');
+    setTimeout(() => setSonKayitMesaji(null), 2200);
+  };
+
   const aylar = useMemo(() => {
     const set = new Set(kayitlar.map((k) => ayAnahtari(k.tarih)));
     set.add(ayAnahtari(bugun()));
@@ -362,28 +376,36 @@ export default function MuhasebeApp() {
   const buAyKayitlar = kayitlar.filter((k) => ayAnahtari(k.tarih) === secilenAy);
 
   // Net hesap: "Geçici Çekim/Avans" hiçbir şekilde kâr/zarara dahil edilmez
-  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim';
+  // Veresiye (ödenmemiş) harç kayıtları da gelire dahil edilmez, ödenince otomatik dahil olur
+  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.odendiMi !== false;
 
-  const toplamGelir = buAyKayitlar.filter((k) => k.tip === 'gelir').reduce((s, k) => s + k.kalan, 0);
+  const toplamGelir = buAyKayitlar.filter((k) => k.tip === 'gelir' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
   const toplamGider = buAyKayitlar.filter((k) => k.tip === 'gider' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
   const net = toplamGelir - toplamGider;
 
-  const toplamHarcTahsilat = buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc').reduce((s, k) => s + k.tutar, 0);
-  const toplamHarcKalan = buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc').reduce((s, k) => s + k.kalan, 0);
+  const toplamHarcTahsilat = buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi !== false).reduce((s, k) => s + k.tutar, 0);
+  const toplamHarcKalan = buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi !== false).reduce((s, k) => s + k.kalan, 0);
   const ozelDersToplam = buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'ozel_ders').reduce((s, k) => s + k.tutar, 0);
   const ozelDersKursaKalan = buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'ozel_ders').reduce((s, k) => s + k.kalan, 0);
   const kisiselCekim = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'kisisel').reduce((s, k) => s + k.kalan, 0);
   const geciciCekim = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'gecici_cekim').reduce((s, k) => s + k.kalan, 0);
 
-  // Devlete Borç Harç: TÜM ZAMANLAR üzerinden - tahsil edilen harç (tutar-kalan farkı) eksi devlete ödenenler
-  const tumZamanlarDevletePay = kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc').reduce((s, k) => s + (k.tutar - k.kalan), 0);
+  // Devlete Borç Harç: TÜM ZAMANLAR üzerinden - sadece ÖDENMİŞ harçlar borç oluşturur
+  const tumZamanlarDevletePay = kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi !== false).reduce((s, k) => s + (k.tutar - k.kalan), 0);
   const tumZamanlarHarcOdemesi = kayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'harc_odeme').reduce((s, k) => s + k.kalan, 0);
   const devleteBorcHarc = tumZamanlarDevletePay - tumZamanlarHarcOdemesi;
 
-  // Sınav tarihi bazlı harç sayacı (bu ay)
+  // Bekleyen (veresiye/ödenmemiş) harçlar listesi - tüm zamanlar, henüz ödenmemiş
+  const bekleyenHarclar = useMemo(() => {
+    return kayitlar
+      .filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi === false)
+      .sort((a, b) => (a.tarih < b.tarih ? 1 : -1));
+  }, [kayitlar]);
+
+  // Sınav tarihi bazlı harç sayacı (bu ay, sadece ödenmiş)
   const sinavTarihiSayaci = useMemo(() => {
     const map = {};
-    buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi).forEach((k) => {
+    buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi && k.odendiMi !== false).forEach((k) => {
       map[k.sinavTarihi] = (map[k.sinavTarihi] || 0) + 1;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
@@ -391,7 +413,7 @@ export default function MuhasebeApp() {
 
   const kasaHesapla = (kayitlarListesi) => {
     const sonuc = { nakit: 0, havale: 0, pos: 0 };
-    kayitlarListesi.forEach((k) => {
+    kayitlarListesi.filter((k) => k.tip !== 'gelir' || k.odendiMi !== false).forEach((k) => {
       const tutar = k.tip === 'gelir' ? k.kalan : -k.kalan;
       sonuc[k.odeme] = (sonuc[k.odeme] || 0) + tutar;
     });
@@ -401,7 +423,7 @@ export default function MuhasebeApp() {
 
   const gelirKategorileri = useMemo(() => {
     const map = {};
-    buAyKayitlar.filter((k) => k.tip === 'gelir').forEach((k) => { map[k.kategori] = (map[k.kategori] || 0) + k.kalan; });
+    buAyKayitlar.filter((k) => k.tip === 'gelir' && k.odendiMi !== false).forEach((k) => { map[k.kategori] = (map[k.kategori] || 0) + k.kalan; });
     return GELIR_KATEGORILERI.map((g) => ({ ...g, tutar: map[g.id] || 0 })).filter((g) => g.tutar !== 0);
   }, [buAyKayitlar]);
 
@@ -416,7 +438,7 @@ export default function MuhasebeApp() {
   const egitmenKirilimi = useMemo(() => {
     return EGITMENLER.map((e) => {
       const kayitlarE = buAyKayitlar.filter((k) => k.egitmen === e.id);
-      const gelir = kayitlarE.filter((k) => k.tip === 'gelir').reduce((s, k) => s + k.kalan, 0);
+      const gelir = kayitlarE.filter((k) => k.tip === 'gelir' && k.odendiMi !== false).reduce((s, k) => s + k.kalan, 0);
       const ozelDers = kayitlarE.filter((k) => k.tip === 'gelir' && k.kategori === 'ozel_ders').reduce((s, k) => s + k.kalan, 0);
       return { ...e, gelir, ozelDers };
     });
@@ -451,7 +473,7 @@ export default function MuhasebeApp() {
     for (let i = 1; i <= gun; i++) {
       const tarih = `${secilenAy}-${String(i).padStart(2, '0')}`;
       const gKayitlar = kayitlar.filter((k) => k.tarih === tarih);
-      const gelir = gKayitlar.filter((k) => k.tip === 'gelir').reduce((s, k) => s + k.kalan, 0);
+      const gelir = gKayitlar.filter((k) => k.tip === 'gelir' && k.odendiMi !== false).reduce((s, k) => s + k.kalan, 0);
       const gider = gKayitlar.filter((k) => k.tip === 'gider' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
       data.push({ tarih, gun: i, gelir, gider, net: gelir - gider, kayitSayisi: gKayitlar.length });
     }
@@ -478,7 +500,7 @@ export default function MuhasebeApp() {
   };
 
   const ayiExcelOlarakIndir = () => {
-    const basliklar = ['Tarih', 'Tip', 'Kategori', 'Açıklama', 'Tutar', 'Kalan (Net)', 'Eğitmen', 'Araç', 'Ödeme', 'İşlemi Yapan', 'Not'];
+    const basliklar = ['Tarih', 'Tip', 'Kategori', 'Açıklama', 'Tutar', 'Kalan (Net)', 'Eğitmen', 'Araç', 'Ödeme', 'İşlemi Yapan', 'Durum', 'Not'];
     const satirlar = buAyKayitlar.map((k) => [
       k.tarih,
       k.tip === 'gelir' ? 'Gelir' : 'Gider',
@@ -490,6 +512,7 @@ export default function MuhasebeApp() {
       aracAdi(k.arac),
       ODEME_TIPLERI.find((o) => o.id === k.odeme)?.isim || '',
       ISLEM_YAPAN.find((p) => p.id === k.islemYapan)?.isim || '',
+      k.odendiMi === false ? 'Veresiye' : 'Ödendi',
       k.not || '',
     ]);
 
@@ -753,8 +776,39 @@ export default function MuhasebeApp() {
                   placeholder="örn: 27-28 Ağustos"
                   value={form.sinavTarihi}
                   onChange={(e) => setForm({ ...form, sinavTarihi: e.target.value })}
-                  style={inputStyle}
+                  style={{ ...inputStyle, marginBottom: 14 }}
                 />
+
+                <label style={labelStyle}>Ödeme Durumu</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => setForm({ ...form, odendiMi: true })}
+                    style={{
+                      flex: 1, padding: '12px 4px', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                      border: form.odendiMi ? `1px solid ${C.mint}` : `1px solid ${C.border}`,
+                      background: form.odendiMi ? 'rgba(95,230,168,0.12)' : C.bg,
+                      color: form.odendiMi ? C.mint : C.textDim,
+                    }}
+                  >
+                    Ödendi
+                  </button>
+                  <button
+                    onClick={() => setForm({ ...form, odendiMi: false })}
+                    style={{
+                      flex: 1, padding: '12px 4px', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                      border: !form.odendiMi ? `1px solid ${C.gold}` : `1px solid ${C.border}`,
+                      background: !form.odendiMi ? 'rgba(240,200,104,0.12)' : C.bg,
+                      color: !form.odendiMi ? C.gold : C.textDim,
+                    }}
+                  >
+                    Veresiye (Sonra Ödenecek)
+                  </button>
+                </div>
+                {!form.odendiMi && (
+                  <div style={{ ...hintBox, marginTop: 10, borderColor: C.gold + '55' }}>
+                    Para henüz kasaya girmedi. Bu kayıt gelire dahil edilmez, "Bekleyen Harçlar" listesinde görünür. Ödendiğinde oradan işaretleyebilirsin.
+                  </div>
+                )}
               </div>
             )}
 
@@ -1115,6 +1169,35 @@ export default function MuhasebeApp() {
               </div>
             )}
 
+            {/* Bekleyen (veresiye) harçlar */}
+            {bekleyenHarclar.length > 0 && (
+              <div style={{ background: 'rgba(240,200,104,0.06)', borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid rgba(240,200,104,0.3)` }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: C.gold, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  Bekleyen Harçlar ({bekleyenHarclar.length})
+                </div>
+                <div style={{ fontSize: 11, color: C.textFaint, marginBottom: 12 }}>Henüz ödenmedi, gelire dahil değil</div>
+                {bekleyenHarclar.map((k) => (
+                  <div key={k.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid rgba(240,200,104,0.15)` }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.aciklama}</div>
+                      <div style={{ fontSize: 11, color: C.textFaint }}>
+                        {k.tarih}{k.sinavTarihi ? ` · Sınav: ${k.sinavTarihi}` : ''} · {fmt(k.tutar)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => harcOdendiIsaretle(k.id)}
+                      style={{
+                        padding: '8px 12px', borderRadius: 10, border: `1px solid ${C.mint}`, background: 'rgba(95,230,168,0.12)',
+                        color: C.mint, cursor: 'pointer', fontSize: 12, fontWeight: 700, marginLeft: 10, flexShrink: 0,
+                      }}
+                    >
+                      Ödendi
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {(kisiselCekim > 0 || geciciCekim > 0) && (
               <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
                 {kisiselCekim > 0 && (
@@ -1420,12 +1503,17 @@ export default function MuhasebeApp() {
           {[...buAyKayitlar].reverse().map((k) => (
             <div key={k.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.aciklama}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {k.aciklama}
+                  {k.odendiMi === false && (
+                    <span style={{ fontSize: 9, fontWeight: 800, color: C.gold, background: 'rgba(240,200,104,0.15)', padding: '2px 6px', borderRadius: 6, flexShrink: 0 }}>VERESİYE</span>
+                  )}
+                </div>
                 <div style={{ fontSize: 11, color: C.textFaint }}>
                   {k.tarih} · {katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.islemYapan ? ` · ${ISLEM_YAPAN.find(p=>p.id===k.islemYapan)?.isim}` : ''}{k.not ? ` · ${k.not}` : ''}
                 </div>
               </div>
-              <div style={{ fontWeight: 800, fontSize: 14, color: k.tip === 'gelir' ? C.mint : C.rose, marginLeft: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: k.odendiMi === false ? C.textFaint : (k.tip === 'gelir' ? C.mint : C.rose), marginLeft: 10, fontFamily: "'JetBrains Mono', monospace" }}>
                 {k.tip === 'gelir' ? '+' : '−'}{fmt(k.kalan)}
               </div>
               <button onClick={() => sil(k.id)} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 8, padding: 4 }}>
