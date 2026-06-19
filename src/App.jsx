@@ -68,11 +68,6 @@ const GIDER_KATEGORILERI = [
   { id: 'diger', isim: 'Diğer' },
 ];
 
-const SINAV_TARIHLERI = [
-  '6-7 Eylül', '13-14 Eylül', '20-21 Eylül', '27-28 Eylül',
-  '4-5 Ekim', '11-12 Ekim', '18-19 Ekim', '25-26 Ekim',
-];
-
 const ODEME_TIPLERI = [
   { id: 'nakit', isim: 'Nakit', icon: Banknote },
   { id: 'havale', isim: 'Havale/EFT', icon: ArrowLeftRight },
@@ -753,10 +748,13 @@ export default function MuhasebeApp() {
                   </div>
                 )}
                 <label style={labelStyle}>Sınav Tarihi (opsiyonel)</label>
-                <select value={form.sinavTarihi} onChange={(e) => setForm({ ...form, sinavTarihi: e.target.value })} style={inputStyle}>
-                  <option value="">Seçilmedi</option>
-                  {SINAV_TARIHLERI.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <input
+                  type="text"
+                  placeholder="örn: 27-28 Ağustos"
+                  value={form.sinavTarihi}
+                  onChange={(e) => setForm({ ...form, sinavTarihi: e.target.value })}
+                  style={inputStyle}
+                />
               </div>
             )}
 
