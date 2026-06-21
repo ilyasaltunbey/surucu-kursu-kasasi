@@ -27,6 +27,9 @@ const VARSAYILAN_PERSONEL = [
   { id: 'parttime', isim: 'Part-Time Hoca (isim belirt)', gorev: 'Serbest' },
 ];
 
+// Her sınav tarihi kaydı: { id, etiket: "27-28 Ağustos", tarih: "2026-08-28" (son gün, geçmiş kontrolü için) }
+const VARSAYILAN_SINAV_TARIHLERI = [];
+
 const depoYukle = (anahtar, varsayilan) => {
   try {
     const veri = localStorage.getItem(anahtar);
@@ -165,10 +168,11 @@ export default function MuhasebeApp() {
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hataMesaji, setHataMesaji] = useState(null);
 
-  // Eğitmen / Araç / Personel listeleri: Supabase 'ayarlar' tablosunda saklanır (tüm cihazlarda ortak)
+  // Eğitmen / Araç / Personel / Sınav Tarihleri listeleri: Supabase 'ayarlar' tablosunda saklanır (tüm cihazlarda ortak)
   const [EGITMENLER, setEGITMENLER] = useState(() => depoYukle('skk_egitmenler', VARSAYILAN_EGITMENLER));
   const [ARACLAR, setARACLAR] = useState(() => depoYukle('skk_araclar', VARSAYILAN_ARACLAR));
   const [PERSONEL, setPERSONEL] = useState(() => depoYukle('skk_personel', VARSAYILAN_PERSONEL));
+  const [SINAV_TARIHLERI, setSINAV_TARIHLERI] = useState(() => depoYukle('skk_sinav_tarihleri', VARSAYILAN_SINAV_TARIHLERI));
   const ayarlarYuklendi = React.useRef(false);
 
   // İlk yüklemede Supabase'den ayarları çek (yoksa varsayılanları oraya yaz)
@@ -188,6 +192,9 @@ export default function MuhasebeApp() {
 
       if (map.personel) setPERSONEL(map.personel);
       else await supabase.from('ayarlar').upsert({ id: 'personel', veri: VARSAYILAN_PERSONEL });
+
+      if (map.sinav_tarihleri) setSINAV_TARIHLERI(map.sinav_tarihleri);
+      else await supabase.from('ayarlar').upsert({ id: 'sinav_tarihleri', veri: VARSAYILAN_SINAV_TARIHLERI });
 
       ayarlarYuklendi.current = true;
     };
@@ -219,6 +226,14 @@ export default function MuhasebeApp() {
     });
   }, [PERSONEL]);
 
+  useEffect(() => {
+    if (!ayarlarYuklendi.current) return;
+    depoKaydet('skk_sinav_tarihleri', SINAV_TARIHLERI);
+    supabase.from('ayarlar').upsert({ id: 'sinav_tarihleri', veri: SINAV_TARIHLERI }).then(({ error }) => {
+      if (error) setHataMesaji('Sınav tarihleri kaydedilemedi: ' + error.message);
+    });
+  }, [SINAV_TARIHLERI]);
+
   // Ayarlar başka bir cihazda değişirse gerçek zamanlı yansıt
   useEffect(() => {
     const kanal = supabase
@@ -229,6 +244,7 @@ export default function MuhasebeApp() {
         if (row.id === 'egitmenler') setEGITMENLER(row.veri);
         if (row.id === 'araclar') setARACLAR(row.veri);
         if (row.id === 'personel') setPERSONEL(row.veri);
+        if (row.id === 'sinav_tarihleri') setSINAV_TARIHLERI(row.veri);
       })
       .subscribe();
     return () => { supabase.removeChannel(kanal); };
@@ -544,6 +560,112 @@ export default function MuhasebeApp() {
     URL.revokeObjectURL(url);
   };
 
+  const ayiPdfOlarakIndir = () => {
+    const pencere = window.open('', '_blank');
+    if (!pencere) {
+      setHataMesaji('Açılır pencere engellendi. Tarayıcı ayarlarından izin ver.');
+      return;
+    }
+
+    const satirHtml = (k) => `
+      <tr>
+        <td>${k.tarih}</td>
+        <td>${k.tip === 'gelir' ? 'Gelir' : 'Gider'}</td>
+        <td>${katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI)}</td>
+        <td>${k.aciklama}${k.odendiMi === false ? ' (Veresiye)' : ''}</td>
+        <td>${egitmenAdi(k.egitmen) || '—'}</td>
+        <td>${aracAdi(k.arac) || '—'}</td>
+        <td>${ODEME_TIPLERI.find((o) => o.id === k.odeme)?.isim || ''}</td>
+        <td style="text-align:right; font-weight:700; color:${k.tip === 'gelir' ? '#1a8a5e' : '#b8453a'}">${k.tip === 'gelir' ? '+' : '−'}${fmt(k.kalan)}</td>
+      </tr>`;
+
+    const kategoriSatirHtml = (g, renk) => `
+      <tr>
+        <td>${g.isim}</td>
+        <td style="text-align:right; font-weight:700; color:${renk}">${fmt(g.tutar)}</td>
+      </tr>`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<title>Kasa Raporu - ${ayAdi(secilenAy + '-01')}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; padding: 32px; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 2px; }
+  .alt-baslik { color: #666; font-size: 13px; margin-bottom: 24px; }
+  .hero { display: flex; gap: 24px; padding: 20px; border-radius: 10px; background: ${net >= 0 ? '#eafaf1' : '#fdecea'}; margin-bottom: 24px; border: 1px solid ${net >= 0 ? '#bfe8d4' : '#f5c6c0'}; }
+  .hero .buyuk { font-size: 28px; font-weight: 800; color: ${net >= 0 ? '#1a8a5e' : '#b8453a'}; }
+  .hero .etiket { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #666; margin-bottom: 4px; }
+  .kasa-grid { display: flex; gap: 12px; margin-bottom: 24px; }
+  .kasa-kart { flex: 1; padding: 12px 14px; border: 1px solid #ddd; border-radius: 8px; }
+  .kasa-kart .etiket { font-size: 10px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
+  .kasa-kart .deger { font-size: 16px; font-weight: 700; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: #444; margin: 28px 0 10px; border-bottom: 2px solid #eee; padding-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; padding: 8px 6px; background: #f4f4f4; font-weight: 700; border-bottom: 2px solid #ddd; }
+  td { padding: 7px 6px; border-bottom: 1px solid #eee; }
+  .ozet-tablo td:first-child { font-weight: 600; }
+  @media print { body { padding: 12px; } }
+</style>
+</head>
+<body>
+  <h1>Sürücü Kursu Kasası — Aylık Rapor</h1>
+  <div class="alt-baslik">${ayAdi(secilenAy + '-01')} · Oluşturulma: ${new Date().toLocaleDateString('tr-TR')}</div>
+
+  <div class="hero">
+    <div>
+      <div class="etiket">${net >= 0 ? 'Net Kâr' : 'Net Zarar'}</div>
+      <div class="buyuk">${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))}</div>
+    </div>
+    <div>
+      <div class="etiket">Net Gelir</div>
+      <div class="buyuk" style="font-size:16px; color:#1a8a5e;">${fmt(toplamGelir)}</div>
+    </div>
+    <div>
+      <div class="etiket">Gider</div>
+      <div class="buyuk" style="font-size:16px; color:#b8453a;">${fmt(toplamGider)}</div>
+    </div>
+  </div>
+
+  <div class="kasa-grid">
+    <div class="kasa-kart"><div class="etiket">Nakit</div><div class="deger">${fmt(kasaAy.nakit)}</div></div>
+    <div class="kasa-kart"><div class="etiket">Havale</div><div class="deger">${fmt(kasaAy.havale)}</div></div>
+    <div class="kasa-kart"><div class="etiket">POS</div><div class="deger">${fmt(kasaAy.pos)}</div></div>
+  </div>
+
+  <h2>Gelir Dağılımı</h2>
+  <table class="ozet-tablo">
+    ${gelirKategorileri.map((g) => kategoriSatirHtml(g, '#1a8a5e')).join('')}
+  </table>
+
+  <h2>Gider Dağılımı</h2>
+  <table class="ozet-tablo">
+    ${giderKategorileri.map((g) => kategoriSatirHtml(g, '#b8453a')).join('')}
+  </table>
+
+  <h2>Tüm Hareketler (${buAyKayitlar.length} kayıt)</h2>
+  <table>
+    <thead>
+      <tr><th>Tarih</th><th>Tip</th><th>Kategori</th><th>Açıklama</th><th>Eğitmen</th><th>Araç</th><th>Ödeme</th><th style="text-align:right">Tutar</th></tr>
+    </thead>
+    <tbody>
+      ${[...buAyKayitlar].sort((a, b) => a.tarih < b.tarih ? -1 : 1).map(satirHtml).join('')}
+    </tbody>
+  </table>
+
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>`;
+
+    pencere.document.write(html);
+    pencere.document.close();
+  };
+
   const egitmenAdiGuncelle = (id, yeniIsim) => setEGITMENLER(EGITMENLER.map((e) => e.id === id ? { ...e, isim: yeniIsim } : e));
   const egitmenSil = (id) => setEGITMENLER(EGITMENLER.filter((e) => e.id !== id));
   const egitmenEkle = (isim) => {
@@ -560,10 +682,26 @@ export default function MuhasebeApp() {
     setARACLAR([...ARACLAR, { id, isim: isim.trim() }]);
   };
 
+  const sinavTarihiSil = (id) => setSINAV_TARIHLERI(SINAV_TARIHLERI.filter((s) => s.id !== id));
+  const sinavTarihiEkle = (etiket, tarih) => {
+    if (!etiket.trim() || !tarih) return;
+    const id = 'sinav_' + Date.now();
+    setSINAV_TARIHLERI([...SINAV_TARIHLERI, { id, etiket: etiket.trim(), tarih }].sort((a, b) => a.tarih < b.tarih ? -1 : 1));
+  };
+
   const [yeniEgitmenAdi, setYeniEgitmenAdi] = useState('');
   const [yeniAracAdi, setYeniAracAdi] = useState('');
+  const [yeniSinavEtiket, setYeniSinavEtiket] = useState('');
+  const [yeniSinavTarih, setYeniSinavTarih] = useState('');
 
   const egitmenAdi = (id) => EGITMENLER.find((e) => e.id === id)?.isim || '';
+
+  // Geçmişte kalmamış (bugün veya sonrası) sınav tarihleri - forma sadece bunlar çıkar
+  const aktifSinavTarihleri = useMemo(() => {
+    const buAydaTarih = bugun();
+    return SINAV_TARIHLERI.filter((s) => s.tarih >= buAydaTarih);
+  }, [SINAV_TARIHLERI]);
+
   const aracAdi = (id) => ARACLAR.find((a) => a.id === id)?.isim || '';
 
   const pinKontrol = () => {
@@ -771,13 +909,19 @@ export default function MuhasebeApp() {
                   </div>
                 )}
                 <label style={labelStyle}>Sınav Tarihi (opsiyonel)</label>
-                <input
-                  type="text"
-                  placeholder="örn: 27-28 Ağustos"
+                <select
                   value={form.sinavTarihi}
                   onChange={(e) => setForm({ ...form, sinavTarihi: e.target.value })}
                   style={{ ...inputStyle, marginBottom: 14 }}
-                />
+                >
+                  <option value="">Seçilmedi</option>
+                  {aktifSinavTarihleri.map((s) => <option key={s.id} value={s.etiket}>{s.etiket}</option>)}
+                </select>
+                {aktifSinavTarihleri.length === 0 && (
+                  <div style={{ ...hintBox, marginTop: -6, marginBottom: 14 }}>
+                    Henüz sınav tarihi tanımlanmamış. Ayarlar sekmesinden ekleyebilirsin.
+                  </div>
+                )}
 
                 <label style={labelStyle}>Ödeme Durumu</label>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -1069,16 +1213,28 @@ export default function MuhasebeApp() {
 
         {gorunum === 'ozet' && (
           <>
-            <button
-              onClick={ayiExcelOlarakIndir}
-              style={{
-                width: '100%', padding: '12px', borderRadius: 12, marginBottom: 14, cursor: 'pointer',
-                background: C.panel, border: `1px solid ${C.border}`, color: C.textDim,
-                fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              }}
-            >
-              <Receipt size={15} /> Bu Ayı Excel (CSV) Olarak İndir
-            </button>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <button
+                onClick={ayiExcelOlarakIndir}
+                style={{
+                  flex: 1, padding: '12px 8px', borderRadius: 12, cursor: 'pointer',
+                  background: C.panel, border: `1px solid ${C.border}`, color: C.textDim,
+                  fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}
+              >
+                <Receipt size={14} /> Excel (CSV)
+              </button>
+              <button
+                onClick={ayiPdfOlarakIndir}
+                style={{
+                  flex: 1, padding: '12px 8px', borderRadius: 12, cursor: 'pointer',
+                  background: C.panel, border: `1px solid ${C.border}`, color: C.textDim,
+                  fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}
+              >
+                <Receipt size={14} /> PDF Rapor
+              </button>
+            </div>
 
             {/* Hero kart */}
             <div
@@ -1485,6 +1641,61 @@ export default function MuhasebeApp() {
                 >
                   <Plus size={16} />
                 </button>
+              </div>
+            </div>
+
+            <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Sınav Tarihleri</div>
+              <div style={{ fontSize: 11, color: C.textFaint, marginBottom: 14 }}>Geçmiş tarihler otomatik gizlenir, formda görünmez.</div>
+              {SINAV_TARIHLERI.length === 0 && (
+                <div style={{ color: C.textFaint, fontSize: 13, marginBottom: 10 }}>Henüz sınav tarihi eklenmedi.</div>
+              )}
+              {SINAV_TARIHLERI.map((s) => {
+                const gecmis = s.tarih < bugun();
+                return (
+                  <div key={s.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, opacity: gecmis ? 0.45 : 1 }}>
+                    <div style={{ flex: 1, ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>{s.etiket}</span>
+                      <span style={{ fontSize: 11, color: gecmis ? C.textFaint : C.mint, fontWeight: 700 }}>
+                        {gecmis ? 'Geçmiş' : s.tarih}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => sinavTarihiSil(s.id)}
+                      style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 10, color: C.rose, cursor: 'pointer', padding: '10px 12px' }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                );
+              })}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <input
+                  type="text"
+                  placeholder="Etiket (örn: 27-28 Ağustos)"
+                  value={yeniSinavEtiket}
+                  onChange={(e) => setYeniSinavEtiket(e.target.value)}
+                  style={{ ...inputStyle, flex: 1.4 }}
+                />
+                <input
+                  type="date"
+                  value={yeniSinavTarih}
+                  onChange={(e) => setYeniSinavTarih(e.target.value)}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button
+                  onClick={() => {
+                    sinavTarihiEkle(yeniSinavEtiket, yeniSinavTarih);
+                    setYeniSinavEtiket('');
+                    setYeniSinavTarih('');
+                  }}
+                  style={{ background: C.mint, border: 'none', borderRadius: 10, color: '#062017', cursor: 'pointer', padding: '0 16px', fontWeight: 800 }}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+              <div style={{ ...hintBox, fontSize: 11, marginTop: 10 }}>
+                Tarih alanına sınavın son günü girilmeli (örn. "27-28 Ağustos" için 28 Ağustos seç) — o günden sonra otomatik geçmiş sayılır.
               </div>
             </div>
 
