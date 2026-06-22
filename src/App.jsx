@@ -393,7 +393,7 @@ export default function MuhasebeApp() {
 
   // Net hesap: "Geçici Çekim/Avans" hiçbir şekilde kâr/zarara dahil edilmez
   // Veresiye (ödenmemiş) harç kayıtları da gelire dahil edilmez, ödenince otomatik dahil olur
-  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.kategori !== 'harc_odeme' && k.odendiMi !== false;
+  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.kategori !== 'harc_odeme' && k.kategori !== 'kisisel' && k.odendiMi !== false;
 
   const toplamGelir = buAyKayitlar.filter((k) => k.tip === 'gelir' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
   const toplamGider = buAyKayitlar.filter((k) => k.tip === 'gider' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
@@ -436,6 +436,17 @@ export default function MuhasebeApp() {
     return sonuc;
   };
   const kasaAy = kasaHesapla(buAyKayitlar);
+
+  // Tüm zamanlar birikimli kasa (şu an kasada gerçekte ne var)
+  const kasaTumZamanlar = useMemo(() => kasaHesapla(kayitlar), [kayitlar]);
+  const kasaToplam = kasaTumZamanlar.nakit + kasaTumZamanlar.havale + kasaTumZamanlar.pos;
+
+  // Belirli bir güne kadar (o gün dahil) birikmiş toplam kasa
+  const kasaGunItibariyle = (tarih) => {
+    const gecmisKayitlar = kayitlar.filter((k) => k.tarih <= tarih);
+    const k = kasaHesapla(gecmisKayitlar);
+    return k.nakit + k.havale + k.pos;
+  };
 
   const gelirKategorileri = useMemo(() => {
     const map = {};
@@ -1236,48 +1247,62 @@ export default function MuhasebeApp() {
               </button>
             </div>
 
-            {/* Hero kart */}
+            {/* Hero kart - Kasada Toplam büyük, Bu Ayın Net Kârı yanda küçük */}
             <div
               className="scka-card"
               style={{
-                background: net >= 0
+                background: kasaToplam >= 0
                   ? `radial-gradient(circle at 85% -10%, rgba(95,240,172,0.18), transparent 55%), linear-gradient(165deg, #16352A 0%, #0D241B 55%, ${C.bg} 100%)`
                   : `radial-gradient(circle at 85% -10%, rgba(240,146,138,0.18), transparent 55%), linear-gradient(165deg, #3A1E1B 0%, #271613 55%, ${C.bg} 100%)`,
                 borderRadius: 24, padding: '28px 24px', marginBottom: 14,
-                border: `1px solid ${net >= 0 ? 'rgba(95,240,172,0.22)' : 'rgba(240,146,138,0.22)'}`,
+                border: `1px solid ${kasaToplam >= 0 ? 'rgba(95,240,172,0.22)' : 'rgba(240,146,138,0.22)'}`,
                 position: 'relative', overflow: 'hidden',
               }}
             >
-              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.2em', fontWeight: 700 }}>
-                {net >= 0 ? 'Net Kâr' : 'Net Zarar'} · {ayAdi(secilenAy + '-01')}
-              </div>
-              <div className="scka-mono" style={{ fontSize: 44, fontWeight: 800, color: net >= 0 ? C.mint : C.rose, letterSpacing: '-0.03em', textShadow: net >= 0 ? '0 0 30px rgba(95,240,172,0.35)' : '0 0 30px rgba(240,146,138,0.35)' }}>
-                {net >= 0 ? '+' : '−'}{fmt(Math.abs(net))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: C.textDim, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.2em', fontWeight: 700 }}>
+                    Kasada Toplam (Tüm Zamanlar)
+                  </div>
+                  <div className="scka-mono" style={{ fontSize: 40, fontWeight: 800, color: kasaToplam >= 0 ? C.mint : C.rose, letterSpacing: '-0.03em', textShadow: kasaToplam >= 0 ? '0 0 30px rgba(95,240,172,0.35)' : '0 0 30px rgba(240,146,138,0.35)' }}>
+                    {kasaToplam >= 0 ? '+' : '−'}{fmt(Math.abs(kasaToplam))}
+                  </div>
+                </div>
+                {/* Bu ayın net kârı - yanda küçük */}
+                <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 14, padding: '12px 14px', minWidth: 120, textAlign: 'right', marginLeft: 12 }}>
+                  <div style={{ fontSize: 10, color: C.textDim, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
+                    {ayAdi(secilenAy + '-01')} Kârı
+                  </div>
+                  <div className="scka-mono" style={{ fontSize: 16, fontWeight: 800, color: net >= 0 ? C.mint : C.rose }}>
+                    {net >= 0 ? '+' : '−'}{fmt(Math.abs(net))}
+                  </div>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 24, marginTop: 18 }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.mint, fontSize: 11, marginBottom: 3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                    <TrendingUp size={13} /> Net Gelir
+                    <TrendingUp size={13} /> Ay Net Gelir
                   </div>
-                  <div className="scka-mono" style={{ fontSize: 19, fontWeight: 800 }}>{fmt(toplamGelir)}</div>
+                  <div className="scka-mono" style={{ fontSize: 17, fontWeight: 800 }}>{fmt(toplamGelir)}</div>
                 </div>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.rose, fontSize: 11, marginBottom: 3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                    <TrendingDown size={13} /> Gider
+                    <TrendingDown size={13} /> Ay Gider
                   </div>
-                  <div className="scka-mono" style={{ fontSize: 19, fontWeight: 800 }}>{fmt(toplamGider)}</div>
+                  <div className="scka-mono" style={{ fontSize: 17, fontWeight: 800 }}>{fmt(toplamGider)}</div>
                 </div>
               </div>
             </div>
 
-            {/* Kasa durumu */}
+            {/* Kasa durumu - ay bazlı nakit/havale/pos kırılımı */}
             <div style={{ background: C.panel, borderRadius: 18, padding: '16px 18px', marginBottom: 14, border: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Kasa Durumu · Ay Toplamı</div>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Kasa Kırılımı · Ay Hareketi</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <KasaKart icon={Banknote} label="Nakit" deger={kasaAy.nakit} vurgu />
                 <KasaKart icon={ArrowLeftRight} label="Havale" deger={kasaAy.havale} vurgu />
                 <KasaKart icon={CreditCard} label="POS" deger={kasaAy.pos} vurgu />
               </div>
+
             </div>
 
             {/* Bilgi kutuları */}
@@ -1394,7 +1419,7 @@ export default function MuhasebeApp() {
                 {giderKategorileri.map((g) => {
                   const acik = secilenGiderKat === g.id;
                   const detayKayitlari = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === g.id);
-                  const kzHaric = g.id === 'gecici_cekim' || g.id === 'harc_odeme';
+                  const kzHaric = g.id === 'gecici_cekim' || g.id === 'harc_odeme' || g.id === 'kisisel';
                   return (
                     <div key={g.id} style={{ marginBottom: 12 }}>
                       <div
@@ -1488,10 +1513,20 @@ export default function MuhasebeApp() {
 
             {secilenGun && (
               <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
-                <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10, color: C.text }}>
-                  {new Date(secilenGun).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>
+                    {new Date(secilenGun).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })}
+                  </div>
+                  {/* O gün itibariyle birikimli kasa toplamı */}
+                  <div style={{ background: 'rgba(95,240,172,0.08)', border: `1px solid rgba(95,240,172,0.25)`, borderRadius: 12, padding: '8px 14px', textAlign: 'right' }}>
+                    <div style={{ fontSize: 10, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>Bu Gün İtibariyle Kasa</div>
+                    <div className="scka-mono" style={{ fontSize: 15, fontWeight: 800, color: C.mint }}>
+                      {fmt(kasaGunItibariyle(secilenGun))}
+                    </div>
+                  </div>
                 </div>
 
+                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 10, fontWeight: 700 }}>O Günün Hareketi:</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
                   <KasaKart icon={Banknote} label="Nakit" deger={kasaGun.nakit} vurgu />
                   <KasaKart icon={ArrowLeftRight} label="Havale" deger={kasaGun.havale} vurgu />
