@@ -57,11 +57,10 @@ const GIDER_KATEGORILERI = [
   { id: 'kira', isim: 'Kira' },
   { id: 'personel', isim: 'Personel Maaşı' },
   { id: 'yakit', isim: 'Yakıt' },
-  { id: 'bakim', isim: 'Bakım' },
+  { id: 'bakim', isim: 'Arıza/Tamir' },
   { id: 'yikama', isim: 'Yıkama' },
   { id: 'sgk', isim: 'SGK Ödemesi' },
   { id: 'vergi', isim: 'Vergi Ödemesi' },
-  { id: 'arac_bakim', isim: 'Araç Bakım (Genel)' },
   { id: 'mutfak', isim: 'Mutfak/Temizlik/Kırtasiye' },
   { id: 'faturalar', isim: 'Faturalar (Elektrik/Su/İnternet)' },
   { id: 'reklam', isim: 'Reklam' },
@@ -383,6 +382,25 @@ export default function MuhasebeApp() {
     setTimeout(() => setSonKayitMesaji(null), 2200);
   };
 
+  // Kayıt düzenleme state'i
+  const [duzenleModal, setDuzenleModal] = useState(null); // düzenlenen kayıt objesi
+
+  const duzenleKaydet = async () => {
+    if (!duzenleModal) return;
+    const { error } = await supabase
+      .from('kayitlar')
+      .update(kayitToDb(duzenleModal))
+      .eq('id', duzenleModal.id);
+    if (error) {
+      setHataMesaji('Düzenlenemedi: ' + error.message);
+      return;
+    }
+    setKayitlar(kayitlar.map((k) => (k.id === duzenleModal.id ? duzenleModal : k)));
+    setDuzenleModal(null);
+    setSonKayitMesaji('Kayıt güncellendi');
+    setTimeout(() => setSonKayitMesaji(null), 2200);
+  };
+
   const aylar = useMemo(() => {
     const set = new Set(kayitlar.map((k) => ayAnahtari(k.tarih)));
     set.add(ayAnahtari(bugun()));
@@ -391,9 +409,28 @@ export default function MuhasebeApp() {
 
   const buAyKayitlar = kayitlar.filter((k) => ayAnahtari(k.tarih) === secilenAy);
 
+  // Geçen ay hesaplama (kıyaslama için)
+  const gecenAy = useMemo(() => {
+    const [yil, ay] = secilenAy.split('-').map(Number);
+    const d = new Date(yil, ay - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }, [secilenAy]);
+
+  const gecenAyKayitlar = kayitlar.filter((k) => ayAnahtari(k.tarih) === gecenAy);
+
   // Net hesap: "Geçici Çekim/Avans" hiçbir şekilde kâr/zarara dahil edilmez
   // Veresiye (ödenmemiş) harç kayıtları da gelire dahil edilmez, ödenince otomatik dahil olur
   const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.kategori !== 'harc_odeme' && k.kategori !== 'kisisel' && k.odendiMi !== false;
+
+  const gecenAyGelir = gecenAyKayitlar.filter((k) => k.tip === 'gelir' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
+  const gecenAyGider = gecenAyKayitlar.filter((k) => k.tip === 'gider' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
+  const gecenAyNet = gecenAyGelir - gecenAyGider;
+
+  const kiyaslaYuzde = (simdi, gecen) => {
+    if (gecen === 0) return null;
+    return ((simdi - gecen) / Math.abs(gecen)) * 100;
+  };
+
 
   const toplamGelir = buAyKayitlar.filter((k) => k.tip === 'gelir' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
   const toplamGider = buAyKayitlar.filter((k) => k.tip === 'gider' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
@@ -417,6 +454,33 @@ export default function MuhasebeApp() {
       .filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi === false)
       .sort((a, b) => (a.tarih < b.tarih ? 1 : -1));
   }, [kayitlar]);
+
+  // Sınav öncesi uyarı: 7 gün içinde sınavı olan ve hâlâ veresiye harç bekleyenler
+  const sinavOncesiUyarilar = useMemo(() => {
+    const bugunTarih = bugun();
+    const yediGunSonra = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+
+    // Bekleyen harçları sınav tarihine göre grupla
+    const gruplar = {};
+    bekleyenHarclar.forEach((k) => {
+      if (!k.sinavTarihi) return;
+      // O sınav tarihinin gerçek tarihini SINAV_TARIHLERI listesinden bul
+      const sinavObj = SINAV_TARIHLERI.find((s) => s.etiket === k.sinavTarihi);
+      if (!sinavObj) return;
+      if (sinavObj.tarih >= bugunTarih && sinavObj.tarih <= yediGunSonra) {
+        if (!gruplar[k.sinavTarihi]) {
+          gruplar[k.sinavTarihi] = { etiket: k.sinavTarihi, tarih: sinavObj.tarih, kisiSayisi: 0, toplamTutar: 0 };
+        }
+        gruplar[k.sinavTarihi].kisiSayisi++;
+        gruplar[k.sinavTarihi].toplamTutar += k.tutar;
+      }
+    });
+    return Object.values(gruplar).sort((a, b) => a.tarih < b.tarih ? -1 : 1);
+  }, [bekleyenHarclar, SINAV_TARIHLERI]);
 
   // Sınav tarihi bazlı harç sayacı (bu ay, sadece ödenmiş)
   const sinavTarihiSayaci = useMemo(() => {
@@ -786,6 +850,22 @@ export default function MuhasebeApp() {
               <Lock size={18} />
             </button>
           </div>
+
+          {/* Sınav öncesi uyarı - sekreter görsün */}
+          {sinavOncesiUyarilar.length > 0 && (
+            <div style={{ background: 'rgba(240,146,138,0.1)', borderRadius: 14, padding: '14px 16px', marginBottom: 20, border: `1px solid rgba(240,146,138,0.35)` }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.rose, marginBottom: 8 }}>⚠ Sınav Yaklaşıyor — Bekleyen Harçlar</div>
+              {sinavOncesiUyarilar.map((u) => {
+                const kalanGun = Math.ceil((new Date(u.tarih) - new Date(bugun())) / (1000 * 60 * 60 * 24));
+                return (
+                  <div key={u.etiket} style={{ fontSize: 13, color: C.text, marginBottom: 4 }}>
+                    <strong>{u.etiket}</strong> — {u.kisiSayisi} kişi ödeme yapmadı
+                    <span style={{ color: C.rose, marginLeft: 8, fontSize: 11 }}>({kalanGun} gün kaldı)</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Tip seçici */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
@@ -1302,8 +1382,38 @@ export default function MuhasebeApp() {
                 <KasaKart icon={ArrowLeftRight} label="Havale" deger={kasaAy.havale} vurgu />
                 <KasaKart icon={CreditCard} label="POS" deger={kasaAy.pos} vurgu />
               </div>
-
             </div>
+
+            {/* Geçen Ayla Kıyaslama */}
+            {gecenAyNet !== 0 && (
+              <div style={{ background: C.panel, borderRadius: 18, padding: '16px 18px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Geçen Aya Kıyasla</div>
+                {[
+                  { etiket: 'Net Kâr', simdi: net, gecen: gecenAyNet },
+                  { etiket: 'Gelir', simdi: toplamGelir, gecen: gecenAyGelir },
+                  { etiket: 'Gider', simdi: toplamGider, gecen: gecenAyGider },
+                ].map(({ etiket, simdi, gecen }) => {
+                  const yuzde = kiyaslaYuzde(simdi, gecen);
+                  const iyi = etiket === 'Gider' ? simdi <= gecen : simdi >= gecen;
+                  return (
+                    <div key={etiket} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                      <span style={{ fontSize: 13, color: C.textDim, fontWeight: 600 }}>{etiket}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 12, color: C.textFaint, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(gecen)}</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: iyi ? C.mint : C.rose }}>
+                          {fmt(simdi)}
+                          {yuzde !== null && (
+                            <span style={{ fontSize: 11, marginLeft: 6 }}>
+                              {iyi ? '↑' : '↓'}{Math.abs(yuzde).toFixed(0)}%
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Bilgi kutuları */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
@@ -1763,7 +1873,10 @@ export default function MuhasebeApp() {
               <div style={{ fontWeight: 800, fontSize: 14, color: k.odendiMi === false ? C.textFaint : (k.tip === 'gelir' ? C.mint : C.rose), marginLeft: 10, fontFamily: "'JetBrains Mono', monospace" }}>
                 {k.tip === 'gelir' ? '+' : '−'}{fmt(k.kalan)}
               </div>
-              <button onClick={() => sil(k.id)} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 8, padding: 4 }}>
+              <button onClick={() => setDuzenleModal({ ...k })} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
+                <Receipt size={14} />
+              </button>
+              <button onClick={() => sil(k.id)} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
                 <Trash2 size={15} />
               </button>
             </div>
@@ -1774,6 +1887,44 @@ export default function MuhasebeApp() {
           Sürücü Kursu Kasası · Veriler bulutta saklanır
         </p>
       </div>
+
+      {/* Kayıt Düzenleme Modalı */}
+      {duzenleModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 200 }}>
+          <div style={{ background: C.panel, borderRadius: '20px 20px 0 0', padding: '24px 20px', width: '100%', maxWidth: 520, border: `1px solid ${C.borderLight}`, maxHeight: '85vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <span style={{ fontWeight: 800, fontSize: 16 }}>Kaydı Düzenle</span>
+              <button onClick={() => setDuzenleModal(null)} style={{ background: 'none', border: 'none', color: C.textDim, cursor: 'pointer' }}><X size={22} /></button>
+            </div>
+
+            <label style={labelStyle}>Tarih</label>
+            <input type="date" value={duzenleModal.tarih} onChange={(e) => setDuzenleModal({ ...duzenleModal, tarih: e.target.value })} style={{ ...inputStyle, marginBottom: 12 }} />
+
+            <label style={labelStyle}>Açıklama</label>
+            <input type="text" value={duzenleModal.aciklama} onChange={(e) => setDuzenleModal({ ...duzenleModal, aciklama: e.target.value })} style={{ ...inputStyle, marginBottom: 12 }} />
+
+            <label style={labelStyle}>Kategori</label>
+            <select value={duzenleModal.kategori} onChange={(e) => setDuzenleModal({ ...duzenleModal, kategori: e.target.value })} style={{ ...inputStyle, marginBottom: 12 }}>
+              {(duzenleModal.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI).map((kat) => <option key={kat.id} value={kat.id}>{kat.isim}</option>)}
+            </select>
+
+            <label style={labelStyle}>Tutar (₺)</label>
+            <input type="number" value={duzenleModal.tutar} onChange={(e) => setDuzenleModal({ ...duzenleModal, tutar: parseFloat(e.target.value) || 0, kalan: parseFloat(e.target.value) || 0 })} style={{ ...inputStyle, marginBottom: 12 }} />
+
+            <label style={labelStyle}>Ödeme Şekli</label>
+            <select value={duzenleModal.odeme} onChange={(e) => setDuzenleModal({ ...duzenleModal, odeme: e.target.value })} style={{ ...inputStyle, marginBottom: 12 }}>
+              {ODEME_TIPLERI.map((o) => <option key={o.id} value={o.id}>{o.isim}</option>)}
+            </select>
+
+            <label style={labelStyle}>Not</label>
+            <input type="text" value={duzenleModal.not || ''} onChange={(e) => setDuzenleModal({ ...duzenleModal, not: e.target.value })} style={{ ...inputStyle, marginBottom: 20 }} />
+
+            <button onClick={duzenleKaydet} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${C.mint}, #34CC8E)`, color: '#04140D', fontWeight: 800, fontSize: 15 }}>
+              Kaydet
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Hata toast */}
       {hataMesaji && (
