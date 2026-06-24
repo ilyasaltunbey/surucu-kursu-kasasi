@@ -550,43 +550,25 @@ export default function MuhasebeApp() {
 
 
   // Tüm zamanlarda arama sonuçları
-  // Güvenli arama: boş/eksik alanlar beyaz ekran hatası üretmesin.
-  const aramaOK = String(aramaMetni || '').trim().length >= 2;
+  const aramaOK = aramaMetni.trim().length >= 2;
   const aramaSonuclari = useMemo(() => {
     if (!aramaOK) return [];
-
-    const q = String(aramaMetni || '').trim().toLowerCase();
-
+    const q = aramaMetni.trim().toLowerCase();
     return [...kayitlar]
       .filter((k) => {
-        const katIsim = String(
-          katAdi(
-            k?.kategori,
-            k?.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI
-          ) || ''
-        ).toLowerCase();
-
-        const metin = [
-          k?.aciklama,
-          katIsim,
-          k?.tarih,
-          egitmenAdi(k?.egitmen),
-          aracAdi(k?.arac),
-          k?.tutar,
-          k?.kalan,
-          k?.odeme,
-          k?.islemYapan,
-          k?.not,
-          k?.sinavTarihi,
-          k?.tip,
-        ]
-          .map((x) => String(x ?? '').toLowerCase())
-          .join(' ');
-
-        return metin.includes(q);
+        const katIsim = katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI).toLowerCase();
+        return (
+          k.aciklama.toLowerCase().includes(q) ||
+          katIsim.includes(q) ||
+          k.tarih.includes(q) ||
+          (k.egitmen && egitmenAdi(k.egitmen).toLowerCase().includes(q)) ||
+          (k.arac && aracAdi(k.arac).toLowerCase().includes(q)) ||
+          String(k.tutar).includes(q) ||
+          (k.not && k.not.toLowerCase().includes(q))
+        );
       })
-      .sort((a, b) => String(b?.tarih || '').localeCompare(String(a?.tarih || '')));
-  }, [aramaOK, aramaMetni, kayitlar, EGITMENLER, ARACLAR]);
+      .sort((a, b) => (a.tarih < b.tarih ? 1 : -1));
+  }, [aramaMetni, kayitlar]);
 
   const personelMaaslar = useMemo(() => {
     const maaslar = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'personel');
@@ -914,7 +896,7 @@ export default function MuhasebeApp() {
                 key={t}
                 onClick={() => { setTip(t); setForm({ ...form, kategori: '', harcAlinan: '', personel: '' }); }}
                 style={{
-                  flex: 1, padding: '18px', borderRadius: 16, border: 'none', cursor: 'pointer',
+                  flex: 1, padding: '18px', borderRadius: 16, cursor: 'pointer',
                   background: tip === t ? (t === 'gelir' ? `linear-gradient(135deg, ${C.mintDeep}, #1F5C42)` : `linear-gradient(135deg, ${C.roseDeep}, #5A2B25)`) : C.panel,
                   color: tip === t ? C.text : C.textDim,
                   fontWeight: 800, fontSize: 15,
