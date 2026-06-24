@@ -1916,7 +1916,7 @@ export default function MuhasebeApp() {
                       {k.odendiMi === false && <span style={{ fontSize: 9, fontWeight: 800, color: C.gold, background: 'rgba(240,200,104,0.15)', padding: '2px 6px', borderRadius: 6, flexShrink: 0 }}>VERESİYE</span>}
                     </div>
                     <div style={{ fontSize: 11, color: C.textFaint }}>
-                      {k.tarih} · {katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.not ? ` · ${k.not}` : ''}
+                      {k.tarih} · {katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI)} · {ODEME_TIPLERI.find(o => o.id === k.odeme)?.isim || ''}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.not ? ` · ${k.not}` : ''}
                     </div>
                   </div>
                   <div style={{ fontWeight: 800, fontSize: 14, color: k.odendiMi === false ? C.textFaint : (k.tip === 'gelir' ? C.mint : C.rose), marginLeft: 10, fontFamily: "'JetBrains Mono', monospace" }}>
@@ -1938,29 +1938,27 @@ export default function MuhasebeApp() {
               </div>
               {buAyKayitlar.length === 0 && <div style={{ color: C.textFaint, fontSize: 13, padding: '10px 0' }}>Bu ay için kayıt yok.</div>}
               {[...buAyKayitlar].reverse().map((k) => (
-            <div key={k.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {k.aciklama}
-                  {k.odendiMi === false && (
-                    <span style={{ fontSize: 9, fontWeight: 800, color: C.gold, background: 'rgba(240,200,104,0.15)', padding: '2px 6px', borderRadius: 6, flexShrink: 0 }}>VERESİYE</span>
-                  )}
+                <div key={k.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {k.aciklama}
+                      {k.odendiMi === false && <span style={{ fontSize: 9, fontWeight: 800, color: C.gold, background: 'rgba(240,200,104,0.15)', padding: '2px 6px', borderRadius: 6, flexShrink: 0 }}>VERESİYE</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.textFaint }}>
+                      {k.tarih} · {katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI)} · {ODEME_TIPLERI.find(o => o.id === k.odeme)?.isim || ''}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.islemYapan ? ` · ${ISLEM_YAPAN.find(p => p.id === k.islemYapan)?.isim}` : ''}{k.not ? ` · ${k.not}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: k.odendiMi === false ? C.textFaint : (k.tip === 'gelir' ? C.mint : C.rose), marginLeft: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                    {k.tip === 'gelir' ? '+' : '−'}{fmt(k.kalan)}
+                  </div>
+                  <button onClick={() => setDuzenleModal({ ...k })} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
+                    <Receipt size={14} />
+                  </button>
+                  <button onClick={() => sil(k.id)} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
+                    <Trash2 size={15} />
+                  </button>
                 </div>
-                <div style={{ fontSize: 11, color: C.textFaint }}>
-                  {k.tarih} · {katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.islemYapan ? ` · ${ISLEM_YAPAN.find(p=>p.id===k.islemYapan)?.isim}` : ''}{k.not ? ` · ${k.not}` : ''}
-                </div>
-              </div>
-              <div style={{ fontWeight: 800, fontSize: 14, color: k.odendiMi === false ? C.textFaint : (k.tip === 'gelir' ? C.mint : C.rose), marginLeft: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                {k.tip === 'gelir' ? '+' : '−'}{fmt(k.kalan)}
-              </div>
-              <button onClick={() => setDuzenleModal({ ...k })} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
-                <Receipt size={14} />
-              </button>
-              <button onClick={() => sil(k.id)} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
-                <Trash2 size={15} />
-              </button>
-            </div>
-          ))}
+              ))}
             </>
           )}
         </div>
