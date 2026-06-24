@@ -1347,6 +1347,19 @@ export default function MuhasebeApp() {
                   <div className="scka-mono" style={{ fontSize: 40, fontWeight: 800, color: kasaToplam >= 0 ? C.mint : C.rose, letterSpacing: '-0.03em', textShadow: kasaToplam >= 0 ? '0 0 30px rgba(95,240,172,0.35)' : '0 0 30px rgba(240,146,138,0.35)' }}>
                     {kasaToplam >= 0 ? '+' : '−'}{fmt(Math.abs(kasaToplam))}
                   </div>
+                  {/* Kullanılabilir / Devlete Borç kırılımı */}
+                  {devleteBorcHarc > 0 && (
+                    <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: C.textFaint, marginBottom: 2 }}>✅ Kullanılabilir</div>
+                        <div className="scka-mono" style={{ fontSize: 14, fontWeight: 800, color: C.mint }}>{fmt(kasaToplam - devleteBorcHarc)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: C.textFaint, marginBottom: 2 }}>⚠️ Devlete Gidecek</div>
+                        <div className="scka-mono" style={{ fontSize: 14, fontWeight: 800, color: C.gold }}>{fmt(devleteBorcHarc)}</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {/* Bu ayın net kârı - yanda küçük */}
                 <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 14, padding: '12px 14px', minWidth: 120, textAlign: 'right', marginLeft: 12 }}>
@@ -1917,7 +1930,28 @@ export default function MuhasebeApp() {
             </select>
 
             <label style={labelStyle}>Not</label>
-            <input type="text" value={duzenleModal.not || ''} onChange={(e) => setDuzenleModal({ ...duzenleModal, not: e.target.value })} style={{ ...inputStyle, marginBottom: 20 }} />
+            <input type="text" value={duzenleModal.not || ''} onChange={(e) => setDuzenleModal({ ...duzenleModal, not: e.target.value })} style={{ ...inputStyle, marginBottom: 16 }} />
+
+            {duzenleModal.tip === 'gelir' && duzenleModal.kategori === 'harc' && (
+              <>
+                <label style={labelStyle}>Ödeme Durumu</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                  <button
+                    onClick={() => setDuzenleModal({ ...duzenleModal, odendiMi: true })}
+                    style={{ flex: 1, padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13, border: duzenleModal.odendiMi !== false ? `1px solid ${C.mint}` : `1px solid ${C.border}`, background: duzenleModal.odendiMi !== false ? 'rgba(95,230,168,0.12)' : C.bg, color: duzenleModal.odendiMi !== false ? C.mint : C.textDim }}
+                  >
+                    Ödendi
+                  </button>
+                  <button
+                    onClick={() => setDuzenleModal({ ...duzenleModal, odendiMi: false })}
+                    style={{ flex: 1, padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13, border: duzenleModal.odendiMi === false ? `1px solid ${C.gold}` : `1px solid ${C.border}`, background: duzenleModal.odendiMi === false ? 'rgba(240,200,104,0.12)' : C.bg, color: duzenleModal.odendiMi === false ? C.gold : C.textDim }}
+                  >
+                    Veresiye
+                  </button>
+                </div>
+              </>
+            )}
+
 
             <button onClick={duzenleKaydet} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${C.mint}, #34CC8E)`, color: '#04140D', fontWeight: 800, fontSize: 15 }}>
               Kaydet
