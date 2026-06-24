@@ -552,23 +552,25 @@ export default function MuhasebeApp() {
   // Tüm zamanlarda arama sonuçları
   const aramaOK = aramaMetni.trim().length >= 2;
   const aramaSonuclari = useMemo(() => {
-    if (!aramaOK) return [];
+    if (aramaMetni.trim().length < 2) return [];
     const q = aramaMetni.trim().toLowerCase();
     return [...kayitlar]
       .filter((k) => {
         const katIsim = katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI).toLowerCase();
+        const egitmenIsim = (EGITMENLER.find((e) => e.id === k.egitmen)?.isim || '').toLowerCase();
+        const aracIsim = (ARACLAR.find((a) => a.id === k.arac)?.isim || '').toLowerCase();
         return (
-          k.aciklama.toLowerCase().includes(q) ||
+          (k.aciklama || '').toLowerCase().includes(q) ||
           katIsim.includes(q) ||
-          k.tarih.includes(q) ||
-          (k.egitmen && egitmenAdi(k.egitmen).toLowerCase().includes(q)) ||
-          (k.arac && aracAdi(k.arac).toLowerCase().includes(q)) ||
+          (k.tarih || '').includes(q) ||
+          egitmenIsim.includes(q) ||
+          aracIsim.includes(q) ||
           String(k.tutar).includes(q) ||
-          (k.not && k.not.toLowerCase().includes(q))
+          (k.not || '').toLowerCase().includes(q)
         );
       })
       .sort((a, b) => (a.tarih < b.tarih ? 1 : -1));
-  }, [aramaMetni, kayitlar]);
+  }, [aramaMetni, kayitlar, EGITMENLER, ARACLAR]);
 
   const personelMaaslar = useMemo(() => {
     const maaslar = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'personel');
