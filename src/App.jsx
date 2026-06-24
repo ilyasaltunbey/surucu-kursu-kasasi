@@ -305,6 +305,7 @@ export default function MuhasebeApp() {
   const [gorunum, setGorunum] = useState('ozet');
   const [secilenGun, setSecilenGun] = useState(null);
   const [secilenGiderKat, setSecilenGiderKat] = useState(null);
+  const [aramaMetni, setAramaMetni] = useState('');
   const [sonKayitMesaji, setSonKayitMesaji] = useState(null);
 
   const ekle = async () => {
@@ -547,6 +548,27 @@ export default function MuhasebeApp() {
     });
   }, [buAyKayitlar]);
 
+
+  // Tüm zamanlarda arama sonuçları
+  const aramaOK = aramaMetni.trim().length >= 2;
+  const aramaSonuclari = useMemo(() => {
+    if (!aramaOK) return [];
+    const q = aramaMetni.trim().toLowerCase();
+    return [...kayitlar]
+      .filter((k) => {
+        const katIsim = katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI).toLowerCase();
+        return (
+          k.aciklama.toLowerCase().includes(q) ||
+          katIsim.includes(q) ||
+          k.tarih.includes(q) ||
+          (k.egitmen && egitmenAdi(k.egitmen).toLowerCase().includes(q)) ||
+          (k.arac && aracAdi(k.arac).toLowerCase().includes(q)) ||
+          String(k.tutar).includes(q) ||
+          (k.not && k.not.toLowerCase().includes(q))
+        );
+      })
+      .sort((a, b) => (a.tarih < b.tarih ? 1 : -1));
+  }, [aramaMetni, kayitlar]);
 
   const personelMaaslar = useMemo(() => {
     const maaslar = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'personel');
@@ -1866,11 +1888,56 @@ export default function MuhasebeApp() {
 
         {/* Tüm hareketler listesi */}
         <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', border: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-            {ayAdi(secilenAy + '-01')} Tüm Hareketler
+          {/* Arama kutusu */}
+          <div style={{ position: 'relative', marginBottom: 14 }}>
+            <input
+              type="text"
+              placeholder="🔍  Ara... (isim, kategori, tarih, araç, tutar)"
+              value={aramaMetni}
+              onChange={(e) => setAramaMetni(e.target.value)}
+              style={{ ...inputStyle, paddingLeft: 14 }}
+            />
+            {aramaMetni && (
+              <button onClick={() => setAramaMetni('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: C.textDim, cursor: 'pointer', fontSize: 16 }}>×</button>
+            )}
           </div>
-          {buAyKayitlar.length === 0 && <div style={{ color: C.textFaint, fontSize: 13, padding: '10px 0' }}>Bu ay için kayıt yok.</div>}
-          {[...buAyKayitlar].reverse().map((k) => (
+
+          {aramaOK ? (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                Arama Sonuçları ({aramaSonuclari.length} kayıt)
+              </div>
+              {aramaSonuclari.length === 0 && <div style={{ color: C.textFaint, fontSize: 13, padding: '10px 0' }}>Sonuç bulunamadı.</div>}
+              {aramaSonuclari.map((k) => (
+                <div key={k.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {k.aciklama}
+                      {k.odendiMi === false && <span style={{ fontSize: 9, fontWeight: 800, color: C.gold, background: 'rgba(240,200,104,0.15)', padding: '2px 6px', borderRadius: 6, flexShrink: 0 }}>VERESİYE</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.textFaint }}>
+                      {k.tarih} · {katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.not ? ` · ${k.not}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: k.odendiMi === false ? C.textFaint : (k.tip === 'gelir' ? C.mint : C.rose), marginLeft: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                    {k.tip === 'gelir' ? '+' : '−'}{fmt(k.kalan)}
+                  </div>
+                  <button onClick={() => setDuzenleModal({ ...k })} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
+                    <Receipt size={14} />
+                  </button>
+                  <button onClick={() => sil(k.id)} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                {ayAdi(secilenAy + '-01')} Tüm Hareketler
+              </div>
+              {buAyKayitlar.length === 0 && <div style={{ color: C.textFaint, fontSize: 13, padding: '10px 0' }}>Bu ay için kayıt yok.</div>}
+              {[...buAyKayitlar].reverse().map((k) => (
             <div key={k.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1894,6 +1961,8 @@ export default function MuhasebeApp() {
               </button>
             </div>
           ))}
+            </>
+          )}
         </div>
 
         <p style={{ textAlign: 'center', color: C.textFaint, fontSize: 11, marginTop: 16 }}>
