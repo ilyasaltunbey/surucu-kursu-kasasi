@@ -444,10 +444,42 @@ export default function MuhasebeApp() {
   const kisiselCekim = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'kisisel').reduce((s, k) => s + k.kalan, 0);
   const geciciCekim = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'gecici_cekim').reduce((s, k) => s + k.kalan, 0);
 
-  // Devlete Borç Harç: TÜM ZAMANLAR üzerinden - sadece ÖDENMİŞ harçlar borç oluşturur
-  const tumZamanlarDevletePay = kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi !== false).reduce((s, k) => s + (k.tutar - k.kalan), 0);
-  const tumZamanlarHarcOdemesi = kayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'harc_odeme').reduce((s, k) => s + k.kalan, 0);
-  const devleteBorcHarc = tumZamanlarDevletePay - tumZamanlarHarcOdemesi;
+  // Devlete Borç Harç: Sınav tarihi bazlı kırılım
+  const devleteBorcSinavBazli = useMemo(() => {
+    // Her sınav tarihi için: tahsil edilen harçların devlete giden kısmı
+    const tahsilatMap = {};
+    kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi !== false && k.sinavTarihi).forEach((k) => {
+      if (!tahsilatMap[k.sinavTarihi]) tahsilatMap[k.sinavTarihi] = { tahsilat: 0, odeme: 0 };
+      tahsilatMap[k.sinavTarihi].tahsilat += (k.tutar - k.kalan);
+    });
+    // Sınav tarihi belirtilmemiş harçlar
+    const sinavsiziTahsilat = kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi !== false && !k.sinavTarihi).reduce((s, k) => s + (k.tutar - k.kalan), 0);
+
+    // Her ödeme için sınav tarihini düş
+    kayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'harc_odeme').forEach((k) => {
+      const sinav = k.sinavTarihi;
+      if (sinav && tahsilatMap[sinav]) {
+        tahsilatMap[sinav].odeme += k.kalan;
+      } else {
+        // Sınav tarihi belirtilmemiş ödemeler genel havuzdan düşülür
+        if (!tahsilatMap['__genel__']) tahsilatMap['__genel__'] = { tahsilat: sinavsiziTahsilat, odeme: 0 };
+        tahsilatMap['__genel__'].odeme += k.kalan;
+      }
+    });
+
+    // Sınavsız tahsilat genel havuza ekle
+    if (sinavsiziTahsilat > 0 && !tahsilatMap['__genel__']) {
+      tahsilatMap['__genel__'] = { tahsilat: sinavsiziTahsilat, odeme: 0 };
+    }
+
+    return Object.entries(tahsilatMap).map(([etiket, v]) => ({
+      etiket: etiket === '__genel__' ? 'Genel' : etiket,
+      borc: v.tahsilat - v.odeme,
+      odendi: v.odeme >= v.tahsilat,
+    })).filter((s) => s.borc !== 0).sort((a, b) => a.etiket < b.etiket ? -1 : 1);
+  }, [kayitlar]);
+
+  const devleteBorcHarc = devleteBorcSinavBazli.reduce((s, v) => s + v.borc, 0);
 
   // Bekleyen (veresiye/ödenmemiş) harçlar listesi - tüm zamanlar, henüz ödenmemiş
   const bekleyenHarclar = useMemo(() => {
@@ -1084,8 +1116,19 @@ export default function MuhasebeApp() {
             )}
 
             {tip === 'gider' && form.kategori === 'harc_odeme' && (
-              <div style={{ ...hintBox, marginBottom: 14, borderColor: C.gold + '55' }}>
-                Devlete yatırdığın harç tutarını gir — "Devlete Borç Harç" rakamından bu kadar düşülecek.
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ ...hintBox, marginBottom: 12, borderColor: C.gold + '55' }}>
+                  Devlete yatırdığın harç tutarını gir — "Devlete Borç Harç" rakamından bu kadar düşülecek.
+                </div>
+                <label style={labelStyle}>Hangi Sınav İçin? (opsiyonel)</label>
+                <select
+                  value={form.sinavTarihi}
+                  onChange={(e) => setForm({ ...form, sinavTarihi: e.target.value })}
+                  style={{ ...inputStyle, marginBottom: 0 }}
+                >
+                  <option value="">Seçilmedi (genel ödeme)</option>
+                  {SINAV_TARIHLERI.map((s) => <option key={s.id} value={s.etiket}>{s.etiket}</option>)}
+                </select>
               </div>
             )}
 
@@ -1468,19 +1511,29 @@ export default function MuhasebeApp() {
               </div>
             </div>
 
-            {/* Devlete Borç Harç - tüm zamanlar üzerinden, ödenince düşer */}
-            {devleteBorcHarc !== 0 && (
+            {/* Devlete Borç Harç - sınav tarihi bazlı kırılım */}
+            {devleteBorcSinavBazli.length > 0 && (
               <div style={{
-                background: devleteBorcHarc > 0 ? 'rgba(240,200,104,0.08)' : C.panel,
-                borderRadius: 16, padding: '14px 16px', marginBottom: 14,
-                border: `1px solid ${devleteBorcHarc > 0 ? 'rgba(240,200,104,0.3)' : C.border}`,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                background: 'rgba(240,200,104,0.06)', borderRadius: 18, padding: '18px 20px', marginBottom: 14,
+                border: '1px solid rgba(240,200,104,0.3)',
               }}>
-                <div>
-                  <div style={{ color: C.gold, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Devlete Borç Harç</div>
-                  <div style={{ color: C.textFaint, fontSize: 10, marginTop: 2 }}>Tüm zamanlar · ödeyince "Harç Ödemesi" gideri olarak gir</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ color: C.gold, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Devlete Borç Harç</div>
+                    <div style={{ color: C.textFaint, fontSize: 10, marginTop: 2 }}>Sınav bazlı · ödeyince "Harç Ödemesi" gideri olarak gir</div>
+                  </div>
+                  <div style={{ fontWeight: 800, fontSize: 17, color: devleteBorcHarc > 0 ? C.gold : C.mint, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(devleteBorcHarc)}</div>
                 </div>
-                <div style={{ fontWeight: 800, fontSize: 17, color: C.gold, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(devleteBorcHarc)}</div>
+                {devleteBorcSinavBazli.map((s) => (
+                  <div key={s.etiket} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: `1px solid rgba(240,200,104,0.15)` }}>
+                    <span style={{ fontSize: 13, color: s.odendi ? C.textFaint : C.text, fontWeight: 600 }}>
+                      {s.odendi ? '✅' : '⚠️'} {s.etiket}
+                    </span>
+                    <span style={{ fontWeight: 800, fontSize: 13, color: s.odendi ? C.mint : C.gold, fontFamily: "'JetBrains Mono', monospace" }}>
+                      {s.odendi ? 'Ödendi' : fmt(s.borc)}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
 
