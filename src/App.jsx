@@ -1092,14 +1092,6 @@ export default function MuhasebeApp() {
 
             {tip === 'gelir' && form.kategori === 'harc' && (
               <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Devlete giden harç tutarı (₺) — otomatik dolduruldu, gerekirse değiştir</label>
-                <input
-                  type="number"
-                  placeholder="örn: 2000"
-                  value={form.harcAlinan}
-                  onChange={(e) => setForm({ ...form, harcAlinan: e.target.value })}
-                  style={{ ...inputStyle, marginBottom: 14 }}
-                />
                 {form.tutar && (
                   <div style={{ ...hintBox, marginBottom: 14 }}>
                     Kursa kalan: <strong style={{ color: C.mint }}>{fmt((parseFloat(form.tutar) || 0) - (parseFloat(form.harcAlinan) || 0))}</strong>
