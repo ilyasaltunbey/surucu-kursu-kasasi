@@ -482,7 +482,8 @@ export default function MuhasebeApp() {
     })).filter((s) => s.borc !== 0).sort((a, b) => a.etiket < b.etiket ? -1 : 1);
   }, [kayitlar]);
 
-  const devleteBorcHarc = devleteBorcSinavBazli.reduce((s, v) => s + v.borc, 0);
+  // Toplam borç: sadece henüz ÖDENMEMİŞ (pozitif) bakiyeler toplanır - fazla ödenen kısımlar bu toplamı etkilemez
+  const devleteBorcHarc = devleteBorcSinavBazli.filter((v) => v.borc > 0).reduce((s, v) => s + v.borc, 0);
 
   // Bekleyen (veresiye/ödenmemiş) harçlar listesi - tüm zamanlar, henüz ödenmemiş
   const bekleyenHarclar = useMemo(() => {
@@ -1556,11 +1557,11 @@ export default function MuhasebeApp() {
                 </div>
                 {devleteBorcSinavBazli.map((s) => (
                   <div key={s.etiket} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: `1px solid rgba(240,200,104,0.15)` }}>
-                    <span style={{ fontSize: 13, color: s.odendi ? C.textFaint : C.text, fontWeight: 600 }}>
-                      {s.odendi ? '✅' : '⚠️'} {s.etiket}
+                    <span style={{ fontSize: 13, color: s.borc <= 0 ? C.textFaint : C.text, fontWeight: 600 }}>
+                      {s.borc > 0 ? '⚠️' : '✅'} {s.etiket}
                     </span>
-                    <span style={{ fontWeight: 800, fontSize: 13, color: s.odendi ? C.mint : C.gold, fontFamily: "'JetBrains Mono', monospace" }}>
-                      {s.odendi ? 'Ödendi' : fmt(s.borc)}
+                    <span style={{ fontWeight: 800, fontSize: 13, color: s.borc > 0 ? C.gold : C.mint, fontFamily: "'JetBrains Mono', monospace" }}>
+                      {s.borc > 0 ? fmt(s.borc) : (s.borc < 0 ? `Fazla ödendi (${fmt(Math.abs(s.borc))})` : 'Ödendi')}
                     </span>
                   </div>
                 ))}
