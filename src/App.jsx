@@ -173,6 +173,7 @@ export default function MuhasebeApp() {
   const [ARACLAR, setARACLAR] = useState(() => depoYukle('skk_araclar', VARSAYILAN_ARACLAR));
   const [PERSONEL, setPERSONEL] = useState(() => depoYukle('skk_personel', VARSAYILAN_PERSONEL));
   const [SINAV_TARIHLERI, setSINAV_TARIHLERI] = useState(() => depoYukle('skk_sinav_tarihleri', VARSAYILAN_SINAV_TARIHLERI));
+  const [DEVLET_HARC_SABIT, setDEVLET_HARC_SABIT] = useState(() => depoYukle('skk_devlet_harc_sabit', 2000));
   const ayarlarYuklendi = React.useRef(false);
 
   // İlk yüklemede Supabase'den ayarları çek (yoksa varsayılanları oraya yaz)
@@ -195,6 +196,9 @@ export default function MuhasebeApp() {
 
       if (map.sinav_tarihleri) setSINAV_TARIHLERI(map.sinav_tarihleri);
       else await supabase.from('ayarlar').upsert({ id: 'sinav_tarihleri', veri: VARSAYILAN_SINAV_TARIHLERI });
+
+      if (map.devlet_harc_sabit !== undefined) setDEVLET_HARC_SABIT(map.devlet_harc_sabit);
+      else await supabase.from('ayarlar').upsert({ id: 'devlet_harc_sabit', veri: 2000 });
 
       ayarlarYuklendi.current = true;
     };
@@ -234,6 +238,14 @@ export default function MuhasebeApp() {
     });
   }, [SINAV_TARIHLERI]);
 
+  useEffect(() => {
+    if (!ayarlarYuklendi.current) return;
+    depoKaydet('skk_devlet_harc_sabit', DEVLET_HARC_SABIT);
+    supabase.from('ayarlar').upsert({ id: 'devlet_harc_sabit', veri: DEVLET_HARC_SABIT }).then(({ error }) => {
+      if (error) setHataMesaji('Devlet harç tutarı kaydedilemedi: ' + error.message);
+    });
+  }, [DEVLET_HARC_SABIT]);
+
   // Ayarlar başka bir cihazda değişirse gerçek zamanlı yansıt
   useEffect(() => {
     const kanal = supabase
@@ -245,6 +257,7 @@ export default function MuhasebeApp() {
         if (row.id === 'araclar') setARACLAR(row.veri);
         if (row.id === 'personel') setPERSONEL(row.veri);
         if (row.id === 'sinav_tarihleri') setSINAV_TARIHLERI(row.veri);
+        if (row.id === 'devlet_harc_sabit') setDEVLET_HARC_SABIT(row.veri);
       })
       .subscribe();
     return () => { supabase.removeChannel(kanal); };
@@ -974,7 +987,19 @@ export default function MuhasebeApp() {
           <div className="scka-card" style={{ background: `linear-gradient(165deg, ${C.panel} 0%, ${C.panelAlt} 100%)`, borderRadius: 20, padding: '22px', border: `1px solid ${C.border}`, marginBottom: 18, boxShadow: '0 20px 60px -30px rgba(0,0,0,0.6)' }}>
 
             <label style={labelStyle}>Kategori</label>
-            <select value={form.kategori} onChange={(e) => setForm({ ...form, kategori: e.target.value })} style={{ ...inputStyle, marginBottom: 14 }}>
+            <select
+              value={form.kategori}
+              onChange={(e) => {
+                const yeniKategori = e.target.value;
+                setForm({
+                  ...form,
+                  kategori: yeniKategori,
+                  // Harç seçilince devlete giden tutar otomatik dolsun (Ayarlar'daki sabit rakam)
+                  harcAlinan: (tip === 'gelir' && yeniKategori === 'harc') ? String(DEVLET_HARC_SABIT) : form.harcAlinan,
+                });
+              }}
+              style={{ ...inputStyle, marginBottom: 14 }}
+            >
               <option value="">Kategori seç</option>
               {(tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI).map((k) => <option key={k.id} value={k.id}>{k.isim}</option>)}
             </select>
@@ -1067,7 +1092,7 @@ export default function MuhasebeApp() {
 
             {tip === 'gelir' && form.kategori === 'harc' && (
               <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Devlete giden harç tutarı (₺)</label>
+                <label style={labelStyle}>Devlete giden harç tutarı (₺) — otomatik dolduruldu, gerekirse değiştir</label>
                 <input
                   type="number"
                   placeholder="örn: 2000"
@@ -1910,6 +1935,20 @@ export default function MuhasebeApp() {
                 >
                   <Plus size={16} />
                 </button>
+              </div>
+            </div>
+
+            <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Devlete Giden Harç Tutarı (Sabit)</div>
+              <div style={{ fontSize: 11, color: C.textFaint, marginBottom: 14 }}>Her harç girişinde bu rakam otomatik dolar. Devlet ücreti değişirse buradan güncelle.</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="number"
+                  value={DEVLET_HARC_SABIT}
+                  onChange={(e) => setDEVLET_HARC_SABIT(parseFloat(e.target.value) || 0)}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <span style={{ color: C.textDim, fontSize: 14, fontWeight: 700 }}>₺</span>
               </div>
             </div>
 
