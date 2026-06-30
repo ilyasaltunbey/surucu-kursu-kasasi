@@ -51,6 +51,7 @@ const GELIR_KATEGORILERI = [
   { id: 'ozel_ders', isim: 'Özel Ders' },
   { id: 'harc', isim: 'Harç Geliri' },
   { id: 'komisyon', isim: 'Komisyon Geliri' },
+  { id: 'devreden_bakiye', isim: 'Devreden Bakiye (Başlangıç)' },
 ];
 
 const GIDER_KATEGORILERI = [
@@ -423,7 +424,7 @@ export default function MuhasebeApp() {
 
   // Net hesap: "Geçici Çekim/Avans" hiçbir şekilde kâr/zarara dahil edilmez
   // Veresiye (ödenmemiş) harç kayıtları da gelire dahil edilmez, ödenince otomatik dahil olur
-  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.kategori !== 'harc_odeme' && k.kategori !== 'kisisel' && k.odendiMi !== false;
+  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.kategori !== 'harc_odeme' && k.kategori !== 'kisisel' && k.kategori !== 'devreden_bakiye' && k.odendiMi !== false;
 
   const gecenAyGelir = gecenAyKayitlar.filter((k) => k.tip === 'gelir' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
   const gecenAyGider = gecenAyKayitlar.filter((k) => k.tip === 'gider' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
@@ -529,7 +530,15 @@ export default function MuhasebeApp() {
   const kasaHesapla = (kayitlarListesi) => {
     const sonuc = { nakit: 0, havale: 0, pos: 0 };
     kayitlarListesi.filter((k) => k.tip !== 'gelir' || k.odendiMi !== false).forEach((k) => {
-      const tutar = k.tip === 'gelir' ? k.kalan : -k.kalan;
+      // Harçta: tahsil edilenin TAMAMI fiziksel olarak kasaya/cebe girer (devlete giden kısım dahil, sonra ayrıca ödenir)
+      // Özel derste: sadece kursa kalan kısım kasaya girer (hocanın payı hiç senin elinden geçmez)
+      // Diğer gelirlerde: tutar = kalan zaten (kategori ayrımı gerekmez)
+      let tutar;
+      if (k.tip === 'gelir') {
+        tutar = k.kategori === 'harc' ? k.tutar : k.kalan;
+      } else {
+        tutar = -k.kalan;
+      }
       sonuc[k.odeme] = (sonuc[k.odeme] || 0) + tutar;
     });
     return sonuc;
@@ -1130,6 +1139,12 @@ export default function MuhasebeApp() {
               </div>
             )}
 
+            {tip === 'gelir' && form.kategori === 'devreden_bakiye' && (
+              <div style={{ ...hintBox, marginBottom: 14, borderColor: C.gold + '55' }}>
+                Bu kayıt sadece bir kerelik kullanılmalı — sisteme başlamadan önce kasada zaten var olan parayı eklemek için. Kâr/zarar hesabına girmez, sadece "Kasada Toplam" rakamını düzeltir.
+              </div>
+            )}
+
             {tip === 'gider' && form.kategori === 'harc_odeme' && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ ...hintBox, marginBottom: 12, borderColor: C.gold + '55' }}>
@@ -1614,17 +1629,20 @@ export default function MuhasebeApp() {
             {gelirKategorileri.length > 0 && (
               <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 14, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gelir Dağılımı</div>
-                {gelirKategorileri.map((g) => (
+                {gelirKategorileri.map((g) => {
+                  const kzHaric = g.id === 'devreden_bakiye';
+                  return (
                   <div key={g.id} style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
-                      <span style={{ color: C.text, fontWeight: 600 }}>{g.isim}</span>
+                      <span style={{ color: kzHaric ? C.gold : C.text, fontWeight: 600 }}>{g.isim}{kzHaric ? ' (k/z hariç)' : ''}</span>
                       <span style={{ fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(g.tutar)}</span>
                     </div>
                     <div style={{ height: 7, background: C.bg, borderRadius: 4, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${(g.tutar / maxGelirKat) * 100}%`, background: `linear-gradient(90deg, ${C.mintDeep}, ${C.mint})`, borderRadius: 4 }} />
+                      <div style={{ height: '100%', width: `${(g.tutar / maxGelirKat) * 100}%`, background: kzHaric ? `linear-gradient(90deg, #8A6E2E, ${C.gold})` : `linear-gradient(90deg, ${C.mintDeep}, ${C.mint})`, borderRadius: 4 }} />
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
