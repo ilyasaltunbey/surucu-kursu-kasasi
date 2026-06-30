@@ -306,6 +306,8 @@ export default function MuhasebeApp() {
   const [secilenGun, setSecilenGun] = useState(null);
   const [secilenGiderKat, setSecilenGiderKat] = useState(null);
   const [aramaMetni, setAramaMetni] = useState('');
+  const [listeKategoriFiltre, setListeKategoriFiltre] = useState('');
+  const [listeSiralama, setListeSiralama] = useState('yeni'); // 'yeni' veya 'eski'
   const [sonKayitMesaji, setSonKayitMesaji] = useState(null);
 
   const ekle = async () => {
@@ -586,23 +588,36 @@ export default function MuhasebeApp() {
   const aramaSonuclari = useMemo(() => {
     if (aramaMetni.trim().length < 2) return [];
     const q = aramaMetni.trim().toLowerCase();
-    return [...kayitlar]
-      .filter((k) => {
-        const katIsim = katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI).toLowerCase();
-        const egitmenIsim = (EGITMENLER.find((e) => e.id === k.egitmen)?.isim || '').toLowerCase();
-        const aracIsim = (ARACLAR.find((a) => a.id === k.arac)?.isim || '').toLowerCase();
-        return (
-          (k.aciklama || '').toLowerCase().includes(q) ||
-          katIsim.includes(q) ||
-          (k.tarih || '').includes(q) ||
-          egitmenIsim.includes(q) ||
-          aracIsim.includes(q) ||
-          String(k.tutar).includes(q) ||
-          (k.not || '').toLowerCase().includes(q)
-        );
-      })
-      .sort((a, b) => (a.tarih < b.tarih ? 1 : -1));
-  }, [aramaMetni, kayitlar, EGITMENLER, ARACLAR]);
+    let sonuc = [...kayitlar].filter((k) => {
+      const katIsim = katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI).toLowerCase();
+      const egitmenIsim = (EGITMENLER.find((e) => e.id === k.egitmen)?.isim || '').toLowerCase();
+      const aracIsim = (ARACLAR.find((a) => a.id === k.arac)?.isim || '').toLowerCase();
+      return (
+        (k.aciklama || '').toLowerCase().includes(q) ||
+        katIsim.includes(q) ||
+        (k.tarih || '').includes(q) ||
+        egitmenIsim.includes(q) ||
+        aracIsim.includes(q) ||
+        String(k.tutar).includes(q) ||
+        (k.not || '').toLowerCase().includes(q)
+      );
+    });
+    if (listeKategoriFiltre) {
+      const [filtreTip, filtreKat] = listeKategoriFiltre.split(':');
+      sonuc = sonuc.filter((k) => k.tip === filtreTip && k.kategori === filtreKat);
+    }
+    return sonuc.sort((a, b) => listeSiralama === 'yeni' ? (a.tarih < b.tarih ? 1 : -1) : (a.tarih > b.tarih ? 1 : -1));
+  }, [aramaMetni, kayitlar, EGITMENLER, ARACLAR, listeKategoriFiltre, listeSiralama]);
+
+  // Bu ay listesi - kategori filtresi ve sıralama uygulanmış
+  const buAyKayitlarFiltreli = useMemo(() => {
+    let sonuc = [...buAyKayitlar];
+    if (listeKategoriFiltre) {
+      const [filtreTip, filtreKat] = listeKategoriFiltre.split(':');
+      sonuc = sonuc.filter((k) => k.tip === filtreTip && k.kategori === filtreKat);
+    }
+    return sonuc.sort((a, b) => listeSiralama === 'yeni' ? (a.tarih < b.tarih ? 1 : -1) : (a.tarih > b.tarih ? 1 : -1));
+  }, [buAyKayitlar, listeKategoriFiltre, listeSiralama]);
 
   const personelMaaslar = useMemo(() => {
     const maaslar = buAyKayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'personel');
@@ -1944,7 +1959,7 @@ export default function MuhasebeApp() {
         {/* Tüm hareketler listesi */}
         <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', border: `1px solid ${C.border}` }}>
           {/* Arama kutusu */}
-          <div style={{ position: 'relative', marginBottom: 14 }}>
+          <div style={{ position: 'relative', marginBottom: 10 }}>
             <input
               type="text"
               placeholder="🔍  Ara... (isim, kategori, tarih, araç, tutar)"
@@ -1955,6 +1970,31 @@ export default function MuhasebeApp() {
             {aramaMetni && (
               <button onClick={() => setAramaMetni('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: C.textDim, cursor: 'pointer', fontSize: 16 }}>×</button>
             )}
+          </div>
+
+          {/* Kategori filtresi + Sıralama */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+            <select
+              value={listeKategoriFiltre}
+              onChange={(e) => setListeKategoriFiltre(e.target.value)}
+              style={{ ...inputStyle, flex: 1.4, padding: '10px 12px', fontSize: 13 }}
+            >
+              <option value="">Tüm Kategoriler</option>
+              <optgroup label="Gelir">
+                {GELIR_KATEGORILERI.map((k) => <option key={'g_' + k.id} value={'gelir:' + k.id}>{k.isim}</option>)}
+              </optgroup>
+              <optgroup label="Gider">
+                {GIDER_KATEGORILERI.map((k) => <option key={'d_' + k.id} value={'gider:' + k.id}>{k.isim}</option>)}
+              </optgroup>
+            </select>
+            <select
+              value={listeSiralama}
+              onChange={(e) => setListeSiralama(e.target.value)}
+              style={{ ...inputStyle, flex: 1, padding: '10px 12px', fontSize: 13 }}
+            >
+              <option value="yeni">En Yeni</option>
+              <option value="eski">En Eski</option>
+            </select>
           </div>
 
           {aramaOK ? (
@@ -1991,8 +2031,8 @@ export default function MuhasebeApp() {
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                 {ayAdi(secilenAy + '-01')} Tüm Hareketler
               </div>
-              {buAyKayitlar.length === 0 && <div style={{ color: C.textFaint, fontSize: 13, padding: '10px 0' }}>Bu ay için kayıt yok.</div>}
-              {[...buAyKayitlar].reverse().map((k) => (
+              {buAyKayitlarFiltreli.length === 0 && <div style={{ color: C.textFaint, fontSize: 13, padding: '10px 0' }}>{listeKategoriFiltre ? 'Bu kategoride kayıt yok.' : 'Bu ay için kayıt yok.'}</div>}
+              {buAyKayitlarFiltreli.map((k) => (
                 <div key={k.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
