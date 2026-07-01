@@ -535,11 +535,12 @@ export default function MuhasebeApp() {
   // Sınav tarihi bazlı harç sayacı (bu ay, sadece ödenmiş)
   const sinavTarihiSayaci = useMemo(() => {
     const map = {};
-    buAyKayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi && k.odendiMi !== false).forEach((k) => {
+    // Tüm zamanlar — sınav hangi ay olursa olsun o sınav için toplanan harçları say
+    kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi && k.odendiMi !== false).forEach((k) => {
       map[k.sinavTarihi] = (map[k.sinavTarihi] || 0) + 1;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [buAyKayitlar]);
+  }, [kayitlar]);
 
   const kasaHesapla = (kayitlarListesi) => {
     const sonuc = { nakit: 0, havale: 0, pos: 0 };
