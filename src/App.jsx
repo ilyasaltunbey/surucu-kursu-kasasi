@@ -2145,6 +2145,21 @@ export default function MuhasebeApp() {
             <label style={labelStyle}>Not</label>
             <input type="text" value={duzenleModal.not || ''} onChange={(e) => setDuzenleModal({ ...duzenleModal, not: e.target.value })} style={{ ...inputStyle, marginBottom: 16 }} />
 
+            {/* Sınav tarihi — hem harç geliri hem harç ödemesi için */}
+            {(duzenleModal.kategori === 'harc' || duzenleModal.kategori === 'harc_odeme') && (
+              <>
+                <label style={labelStyle}>Hangi Sınav İçin?</label>
+                <select
+                  value={duzenleModal.sinavTarihi || ''}
+                  onChange={(e) => setDuzenleModal({ ...duzenleModal, sinavTarihi: e.target.value })}
+                  style={{ ...inputStyle, marginBottom: 16 }}
+                >
+                  <option value="">Seçilmedi (genel)</option>
+                  {SINAV_TARIHLERI.map((s) => <option key={s.id} value={s.etiket}>{s.etiket}</option>)}
+                </select>
+              </>
+            )}
+
             {duzenleModal.tip === 'gelir' && duzenleModal.kategori === 'harc' && (
               <>
                 <label style={labelStyle}>Ödeme Durumu</label>
