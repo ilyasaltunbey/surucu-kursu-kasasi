@@ -356,7 +356,7 @@ export default function MuhasebeApp() {
       odeme: form.odeme,
       islemYapan: form.islemYapan,
       not: form.not,
-      sinavTarihi: tip === 'gelir' && form.kategori === 'harc' ? form.sinavTarihi : '',
+      sinavTarihi: (tip === 'gelir' && form.kategori === 'harc') || (tip === 'gider' && form.kategori === 'harc_odeme') ? form.sinavTarihi : '',
       odendiMi: tip === 'gelir' && form.kategori === 'harc' ? form.odendiMi : true,
     };
 
