@@ -535,11 +535,13 @@ export default function MuhasebeApp() {
   // Sınav tarihi bazlı harç sayacı (bu ay, sadece ödenmiş)
   const sinavTarihiSayaci = useMemo(() => {
     const map = {};
-    // Tüm zamanlar — sınav hangi ay olursa olsun o sınav için toplanan harçları say
-    kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi && k.odendiMi !== false).forEach((k) => {
-      map[k.sinavTarihi] = (map[k.sinavTarihi] || 0) + 1;
+    // Tüm zamanlar — ödendi ve veresiye dahil hepsi sayılır (sınava girecek kişi sayısı)
+    kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi).forEach((k) => {
+      if (!map[k.sinavTarihi]) map[k.sinavTarihi] = { toplam: 0, veresiye: 0 };
+      map[k.sinavTarihi].toplam++;
+      if (k.odendiMi === false) map[k.sinavTarihi].veresiye++;
     });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+    return Object.entries(map).sort((a, b) => b[1].toplam - a[1].toplam);
   }, [kayitlar]);
 
   const kasaHesapla = (kayitlarListesi) => {
@@ -1590,10 +1592,17 @@ export default function MuhasebeApp() {
             {sinavTarihiSayaci.length > 0 && (
               <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Sınav Tarihine Göre Harç Yatıran Sayısı</div>
-                {sinavTarihiSayaci.map(([tarih, sayi]) => (
-                  <div key={tarih} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                {sinavTarihiSayaci.map(([tarih, v]) => (
+                  <div key={tarih} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
                     <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{tarih}</span>
-                    <span style={{ fontWeight: 800, fontSize: 14, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>{sayi} kişi</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {v.veresiye > 0 && (
+                        <span style={{ fontSize: 11, color: C.gold, fontWeight: 700, background: 'rgba(240,200,104,0.12)', padding: '2px 8px', borderRadius: 8 }}>
+                          {v.veresiye} veresiye
+                        </span>
+                      )}
+                      <span style={{ fontWeight: 800, fontSize: 14, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>{v.toplam} kişi</span>
+                    </div>
                   </div>
                 ))}
               </div>
