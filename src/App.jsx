@@ -1271,7 +1271,7 @@ export default function MuhasebeApp() {
                 <div style={{ fontWeight: 800, fontSize: 14, color: k.tip === 'gelir' ? C.mint : C.rose, fontFamily: "'JetBrains Mono', monospace", marginLeft: 10 }}>
                   {k.tip === 'gelir' ? '+' : '−'}{fmt(k.tutar)}
                 </div>
-                <button onClick={() => sil(k.id)} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 8, padding: 4 }}>
+                <button onClick={() => { if (window.confirm('Bu kaydı silmek istediğinizden emin misiniz?')) sil(k.id); }} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 8, padding: 4 }}>
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -2080,7 +2080,7 @@ export default function MuhasebeApp() {
                   <button onClick={() => setDuzenleModal({ ...k })} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
                     <Receipt size={14} />
                   </button>
-                  <button onClick={() => sil(k.id)} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
+                  <button onClick={() => { if (window.confirm('Bu kaydı silmek istediğinizden emin misiniz?')) sil(k.id); }} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
                     <Trash2 size={15} />
                   </button>
                 </div>
@@ -2109,7 +2109,7 @@ export default function MuhasebeApp() {
                   <button onClick={() => setDuzenleModal({ ...k })} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
                     <Receipt size={14} />
                   </button>
-                  <button onClick={() => sil(k.id)} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
+                  <button onClick={() => { if (window.confirm('Bu kaydı silmek istediğinizden emin misiniz?')) sil(k.id); }} style={{ background: 'none', border: 'none', color: C.textFaint, cursor: 'pointer', marginLeft: 4, padding: 4 }}>
                     <Trash2 size={15} />
                   </button>
                 </div>
