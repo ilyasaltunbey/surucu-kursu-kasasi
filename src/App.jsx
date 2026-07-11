@@ -1910,24 +1910,42 @@ export default function MuhasebeApp() {
                   <KasaKart icon={CreditCard} label="POS" deger={kasaGun.pos} vurgu />
                 </div>
 
-                {secilenGunKayitlar.filter(k => k.tip === 'gelir').length === 0 && <div style={{ color: C.textFaint, fontSize: 13 }}>Bu gün gelir kaydı yok.</div>}
-                {secilenGunKayitlar.filter(k => k.tip === 'gelir').map((k) => (
-                  <div key={k.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{k.aciklama}</span>
-                      <span style={{ fontWeight: 800, fontSize: 13, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>
-                        +{fmt(k.kalan)}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 11, color: C.textFaint }}>
-                      {katAdi(k.kategori, GELIR_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.not ? ` · ${k.not}` : ''}
-                    </div>
-                  </div>
-                ))}
+                {secilenGunKayitlar.length === 0 && <div style={{ color: C.textFaint, fontSize: 13 }}>Bu gün için kayıt yok.</div>}
+
+                {/* Gelirler */}
+                {secilenGunKayitlar.filter(k => k.tip === 'gelir').length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.mint, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Gelirler</div>
+                    {secilenGunKayitlar.filter(k => k.tip === 'gelir').map((k) => (
+                      <div key={k.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{k.aciklama}</span>
+                          <span style={{ fontWeight: 800, fontSize: 13, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>+{fmt(k.kalan)}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: C.textFaint }}>
+                          {katAdi(k.kategori, GELIR_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.not ? ` · ${k.not}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Giderler */}
                 {secilenGunKayitlar.filter(k => k.tip === 'gider').length > 0 && (
-                  <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, background: C.bg, fontSize: 12, color: C.textFaint }}>
-                    + {secilenGunKayitlar.filter(k => k.tip === 'gider').length} gider kaydı · {fmt(secilenGunKayitlar.filter(k => k.tip === 'gider').reduce((s,k) => s + k.kalan, 0))} TL
-                  </div>
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.rose, textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 14, marginBottom: 6 }}>Giderler</div>
+                    {secilenGunKayitlar.filter(k => k.tip === 'gider').map((k) => (
+                      <div key={k.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{k.aciklama}</span>
+                          <span style={{ fontWeight: 800, fontSize: 13, color: C.rose, fontFamily: "'JetBrains Mono', monospace" }}>−{fmt(k.kalan)}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: C.textFaint }}>
+                          {katAdi(k.kategori, GIDER_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.not ? ` · ${k.not}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
             )}
