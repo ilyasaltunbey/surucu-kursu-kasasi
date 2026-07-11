@@ -320,6 +320,7 @@ export default function MuhasebeApp() {
   const [secilenGun, setSecilenGun] = useState(null);
   const [secilenGiderKat, setSecilenGiderKat] = useState(null);
   const [aramaMetni, setAramaMetni] = useState('');
+  const [acikSinavTarihi, setAcikSinavTarihi] = useState(null); // tıklanan sınav tarihi
   const [listeKategoriFiltre, setListeKategoriFiltre] = useState('');
   const [listeSiralama, setListeSiralama] = useState('yeni'); // 'yeni' veya 'eski'
   const [sonKayitMesaji, setSonKayitMesaji] = useState(null);
@@ -837,6 +838,86 @@ export default function MuhasebeApp() {
     pencere.document.write(html);
     pencere.document.close();
   };
+
+  const sinavPdfIndir = (tarih) => {
+    const adaylar = kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi === tarih);
+    const pencere = window.open('', '_blank');
+    if (!pencere) return;
+
+    const satirHtml = (k, i) => `
+      <tr style="background:${i % 2 === 0 ? '#f9f9f9' : '#fff'}">
+        <td>${i + 1}</td>
+        <td>${k.aciklama}</td>
+        <td>${k.tarih}</td>
+        <td>${fmt(k.tutar)}</td>
+        <td>${ODEME_TIPLERI.find(o => o.id === k.odeme)?.isim || ''}</td>
+        <td style="color:${k.odendiMi === false ? '#b8453a' : '#1a8a5e'}; font-weight:700">${k.odendiMi === false ? 'Veresiye' : 'Ödendi'}</td>
+      </tr>`;
+
+    const odenenler = adaylar.filter(k => k.odendiMi !== false);
+    const veresiyeler = adaylar.filter(k => k.odendiMi === false);
+
+    const html = `
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8"/>
+<title>${tarih} Sınav Aday Listesi</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; padding: 32px; max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .alt { color: #666; font-size: 13px; margin-bottom: 24px; }
+  .ozet { display: flex; gap: 20px; margin-bottom: 24px; }
+  .ozet-kart { padding: 12px 18px; border-radius: 8px; border: 1px solid #ddd; }
+  .ozet-kart .sayi { font-size: 22px; font-weight: 800; }
+  .ozet-kart .etiket { font-size: 11px; color: #888; text-transform: uppercase; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 6px; background: #f4f4f4; font-weight: 700; border-bottom: 2px solid #ddd; }
+  td { padding: 7px 6px; border-bottom: 1px solid #eee; }
+  @media print { body { padding: 12px; } }
+</style>
+</head>
+<body>
+  <h1>Altunbey Sürücü Kursu</h1>
+  <h1>${tarih} — Sınav Aday Listesi</h1>
+  <div class="alt">Oluşturulma: ${new Date().toLocaleDateString('tr-TR')}</div>
+
+  <div class="ozet">
+    <div class="ozet-kart">
+      <div class="etiket">Toplam Aday</div>
+      <div class="sayi">${adaylar.length}</div>
+    </div>
+    <div class="ozet-kart">
+      <div class="etiket">Ödenen</div>
+      <div class="sayi" style="color:#1a8a5e">${odenenler.length}</div>
+    </div>
+    <div class="ozet-kart">
+      <div class="etiket">Veresiye</div>
+      <div class="sayi" style="color:#b8453a">${veresiyeler.length}</div>
+    </div>
+    <div class="ozet-kart">
+      <div class="etiket">Toplam Tahsilat</div>
+      <div class="sayi">${fmt(odenenler.reduce((s, k) => s + k.tutar, 0))}</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>Ad Soyad</th><th>Tarih</th><th>Tutar</th><th>Ödeme</th><th>Durum</th></tr>
+    </thead>
+    <tbody>
+      ${adaylar.map((k, i) => satirHtml(k, i)).join('')}
+    </tbody>
+  </table>
+
+  <script>window.onload = function() { window.print(); };</script>
+</body>
+</html>`;
+
+    pencere.document.write(html);
+    pencere.document.close();
+  };
+
 
   const egitmenAdiGuncelle = (id, yeniIsim) => setEGITMENLER(EGITMENLER.map((e) => e.id === id ? { ...e, isim: yeniIsim } : e));
   const egitmenSil = (id) => setEGITMENLER(EGITMENLER.filter((e) => e.id !== id));
@@ -1592,19 +1673,54 @@ export default function MuhasebeApp() {
             {sinavTarihiSayaci.length > 0 && (
               <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Sınav Tarihine Göre Harç Yatıran Sayısı</div>
-                {sinavTarihiSayaci.map(([tarih, v]) => (
-                  <div key={tarih} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-                    <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{tarih}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {v.veresiye > 0 && (
-                        <span style={{ fontSize: 11, color: C.gold, fontWeight: 700, background: 'rgba(240,200,104,0.12)', padding: '2px 8px', borderRadius: 8 }}>
-                          {v.veresiye} veresiye
+                {sinavTarihiSayaci.map(([tarih, v]) => {
+                  const acik = acikSinavTarihi === tarih;
+                  const adaylar = kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi === tarih);
+                  return (
+                    <div key={tarih}>
+                      <div
+                        onClick={() => setAcikSinavTarihi(acik ? null : tarih)}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}
+                      >
+                        <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>
+                          {acik ? '▼' : '▶'} {tarih}
                         </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {v.veresiye > 0 && (
+                            <span style={{ fontSize: 11, color: C.gold, fontWeight: 700, background: 'rgba(240,200,104,0.12)', padding: '2px 8px', borderRadius: 8 }}>
+                              {v.veresiye} veresiye
+                            </span>
+                          )}
+                          <span style={{ fontWeight: 800, fontSize: 14, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>{v.toplam} kişi</span>
+                        </div>
+                      </div>
+                      {acik && (
+                        <div style={{ background: C.bg, borderRadius: 12, padding: '14px', margin: '8px 0 4px' }}>
+                          {adaylar.map((k) => (
+                            <div key={k.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${C.border}` }}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 600 }}>{k.aciklama}</div>
+                                <div style={{ fontSize: 11, color: C.textFaint }}>{k.tarih} · {ODEME_TIPLERI.find(o => o.id === k.odeme)?.isim}</div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: k.odendiMi === false ? C.gold : C.mint }}>
+                                  {k.odendiMi === false ? 'Veresiye' : 'Ödendi'}
+                                </span>
+                                <span style={{ fontWeight: 800, fontSize: 13, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(k.tutar)}</span>
+                              </div>
+                            </div>
+                          ))}
+                          <button
+                            onClick={() => sinavPdfIndir(tarih)}
+                            style={{ marginTop: 12, width: '100%', padding: '10px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.panel, color: C.textDim, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
+                          >
+                            📄 PDF Olarak İndir
+                          </button>
+                        </div>
                       )}
-                      <span style={{ fontWeight: 800, fontSize: 14, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>{v.toplam} kişi</span>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -1794,20 +1910,25 @@ export default function MuhasebeApp() {
                   <KasaKart icon={CreditCard} label="POS" deger={kasaGun.pos} vurgu />
                 </div>
 
-                {secilenGunKayitlar.length === 0 && <div style={{ color: C.textFaint, fontSize: 13 }}>Bu gün için kayıt yok.</div>}
-                {secilenGunKayitlar.map((k) => (
+                {secilenGunKayitlar.filter(k => k.tip === 'gelir').length === 0 && <div style={{ color: C.textFaint, fontSize: 13 }}>Bu gün gelir kaydı yok.</div>}
+                {secilenGunKayitlar.filter(k => k.tip === 'gelir').map((k) => (
                   <div key={k.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{k.aciklama}</span>
-                      <span style={{ fontWeight: 800, fontSize: 13, color: k.tip === 'gelir' ? C.mint : C.rose, fontFamily: "'JetBrains Mono', monospace" }}>
-                        {k.tip === 'gelir' ? '+' : '−'}{fmt(k.kalan)}
+                      <span style={{ fontWeight: 800, fontSize: 13, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>
+                        +{fmt(k.kalan)}
                       </span>
                     </div>
                     <div style={{ fontSize: 11, color: C.textFaint }}>
-                      {katAdi(k.kategori, k.tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.islemYapan ? ` · ${ISLEM_YAPAN.find(p=>p.id===k.islemYapan)?.isim}` : ''}{k.not ? ` · ${k.not}` : ''}
+                      {katAdi(k.kategori, GELIR_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.not ? ` · ${k.not}` : ''}
                     </div>
                   </div>
                 ))}
+                {secilenGunKayitlar.filter(k => k.tip === 'gider').length > 0 && (
+                  <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, background: C.bg, fontSize: 12, color: C.textFaint }}>
+                    + {secilenGunKayitlar.filter(k => k.tip === 'gider').length} gider kaydı · {fmt(secilenGunKayitlar.filter(k => k.tip === 'gider').reduce((s,k) => s + k.kalan, 0))} TL
+                  </div>
+                )}
               </div>
             )}
           </div>
