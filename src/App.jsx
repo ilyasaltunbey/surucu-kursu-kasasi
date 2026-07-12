@@ -679,6 +679,16 @@ export default function MuhasebeApp() {
 
   const secilenGunKayitlar = secilenGun ? kayitlar.filter((k) => k.tarih === secilenGun) : [];
   const kasaGun = secilenGun ? kasaHesapla(secilenGunKayitlar) : { nakit: 0, havale: 0, pos: 0 };
+  const kasaGunGelir = secilenGun ? (() => {
+    const s = { nakit: 0, havale: 0, pos: 0 };
+    secilenGunKayitlar.filter(k => k.tip === 'gelir' && k.odendiMi !== false).forEach(k => { s[k.odeme] = (s[k.odeme] || 0) + k.tutar; });
+    return s;
+  })() : { nakit: 0, havale: 0, pos: 0 };
+  const kasaGunGider = secilenGun ? (() => {
+    const s = { nakit: 0, havale: 0, pos: 0 };
+    secilenGunKayitlar.filter(k => k.tip === 'gider').forEach(k => { s[k.odeme] = (s[k.odeme] || 0) + k.kalan; });
+    return s;
+  })() : { nakit: 0, havale: 0, pos: 0 };
 
   const ayDegistir = (yon) => {
     const [yil, ay] = secilenAy.split('-').map(Number);
@@ -1905,9 +1915,23 @@ export default function MuhasebeApp() {
 
                 <div style={{ fontSize: 11, color: C.textDim, marginBottom: 10, fontWeight: 700 }}>O Günün Hareketi:</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <KasaKart icon={Banknote} label="Nakit" deger={kasaGun.nakit} vurgu />
-                  <KasaKart icon={ArrowLeftRight} label="Havale" deger={kasaGun.havale} vurgu />
-                  <KasaKart icon={CreditCard} label="POS" deger={kasaGun.pos} vurgu />
+                  {[
+                    { label: 'Nakit', icon: Banknote, key: 'nakit' },
+                    { label: 'Havale', icon: ArrowLeftRight, key: 'havale' },
+                    { label: 'POS', icon: CreditCard, key: 'pos' },
+                  ].map(({ label, icon: Icon, key }) => (
+                    <div key={key} style={{ flex: 1, background: C.bg, borderRadius: 14, padding: '10px 10px', border: `1px solid ${C.border}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+                        <Icon size={12} style={{ color: C.textDim }} />
+                        <span style={{ fontSize: 10, color: C.textDim, fontWeight: 700, textTransform: 'uppercase' }}>{label}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: C.mint, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>↑ {fmt(kasaGunGelir[key])}</div>
+                      <div style={{ fontSize: 11, color: C.rose, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>↓ {fmt(kasaGunGider[key])}</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: kasaGun[key] >= 0 ? C.mint : C.rose, fontFamily: "'JetBrains Mono', monospace", marginTop: 4, borderTop: `1px solid ${C.border}`, paddingTop: 4 }}>
+                        {kasaGun[key] >= 0 ? '+' : '−'}{fmt(Math.abs(kasaGun[key]))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {secilenGunKayitlar.length === 0 && <div style={{ color: C.textFaint, fontSize: 13 }}>Bu gün için kayıt yok.</div>}
