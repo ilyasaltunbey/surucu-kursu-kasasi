@@ -110,20 +110,23 @@ const katAdi = (id, liste) => liste.find((x) => x.id === id)?.isim || id;
 
 // ---- Palette ----
 const C = {
-  bg: '#080F0D',
-  panel: '#101C18',
-  panelAlt: '#172620',
-  border: '#22352D',
-  borderLight: '#35543F',
-  text: '#F2F7F4',
-  textDim: '#90AC9F',
-  textFaint: '#56716A',
-  mint: '#5FF0AC',
-  mintDeep: '#2C8A66',
-  gold: '#F0C868',
-  rose: '#F0928A',
-  roseDeep: '#7A3E36',
-  blue: '#7FB6E8',
+  // Lacivert-beyaz tema
+  bg: '#F5F7FA',              // ana zemin - açık gri-beyaz
+  panel: '#FFFFFF',            // kart zemin - beyaz
+  panelAlt: '#F8FAFC',         // ikincil kart zemin
+  border: '#E2E8F0',           // ince kenar
+  borderLight: '#CBD5E1',      // vurgulu kenar
+  text: '#0A2540',             // ana yazı - koyu lacivert
+  textDim: '#475569',          // ikincil yazı
+  textFaint: '#94A3B8',        // soluk yazı / placeholder
+  mint: '#059669',             // pozitif / gelir - yeşil
+  mintDeep: '#047857',
+  gold: '#D97706',             // uyarı / veresiye - kehribar
+  rose: '#DC2626',             // negatif / gider - kırmızı
+  roseDeep: '#991B1B',
+  blue: '#0A2540',             // ana lacivert
+  blueDeep: '#1E3A5F',         // koyu lacivert (gradient için)
+  blueAccent: '#3B82F6',       // aksan mavisi
 };
 
 const FONT_IMPORT = (
@@ -134,6 +137,8 @@ const FONT_IMPORT = (
     @keyframes scka-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
     @keyframes scka-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
     .scka-card { animation: scka-rise 0.35s ease-out; }
+    input, select, textarea { color: #0A2540 !important; background: #FFFFFF !important; }
+    input::placeholder { color: #94A3B8 !important; }
   `}</style>
 );
 
@@ -1372,7 +1377,7 @@ export default function MuhasebeApp() {
               className="scka-display"
               style={{
                 width: '100%', padding: '17px', borderRadius: 14, border: 'none', cursor: 'pointer',
-                background: `linear-gradient(135deg, ${C.mint}, #34CC8E)`, color: '#04140D', fontWeight: 800, fontSize: 16,
+                background: `linear-gradient(135deg, #0A2540, #1E3A5F)`, color: '#FFFFFF', fontWeight: 700, fontSize: 16,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 boxShadow: '0 10px 32px -10px rgba(95,240,172,0.55)', letterSpacing: '0.02em',
               }}
@@ -1520,7 +1525,7 @@ export default function MuhasebeApp() {
                 onClick={pinKontrol}
                 style={{
                   width: '100%', padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer',
-                  background: `linear-gradient(135deg, ${C.mint}, #3DBF87)`, color: '#062017', fontWeight: 800, fontSize: 14,
+                  background: `linear-gradient(135deg, #0A2540, #1E3A5F)`, color: '#FFFFFF', fontWeight: 700, fontSize: 14,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                 }}
               >
@@ -1585,10 +1590,11 @@ export default function MuhasebeApp() {
               onClick={() => setGorunum(v.k)}
               style={{
                 flex: '1 1 22%', padding: '10px 4px', borderRadius: 10, cursor: 'pointer',
-                background: gorunum === v.k ? C.mint : C.panel,
-                color: gorunum === v.k ? '#062017' : C.textDim,
-                fontWeight: 800, fontSize: 12, border: gorunum === v.k ? 'none' : `1px solid ${C.border}`,
+                background: gorunum === v.k ? C.blue : C.panel,
+                color: gorunum === v.k ? '#FFFFFF' : C.textDim,
+                fontWeight: 700, fontSize: 12, border: gorunum === v.k ? 'none' : `1px solid ${C.border}`,
                 transition: 'all 0.12s',
+                boxShadow: gorunum === v.k ? '0 2px 8px rgba(10, 37, 64, 0.2)' : 'none',
               }}
             >
               {v.l}
@@ -1626,57 +1632,58 @@ export default function MuhasebeApp() {
               className="scka-card"
               style={{
                 background: kasaToplam >= 0
-                  ? `radial-gradient(circle at 85% -10%, rgba(95,240,172,0.18), transparent 55%), linear-gradient(165deg, #16352A 0%, #0D241B 55%, ${C.bg} 100%)`
-                  : `radial-gradient(circle at 85% -10%, rgba(240,146,138,0.18), transparent 55%), linear-gradient(165deg, #3A1E1B 0%, #271613 55%, ${C.bg} 100%)`,
-                borderRadius: 24, padding: '28px 24px', marginBottom: 14,
-                border: `1px solid ${kasaToplam >= 0 ? 'rgba(95,240,172,0.22)' : 'rgba(240,146,138,0.22)'}`,
+                  ? `linear-gradient(135deg, #0A2540 0%, #1E3A5F 100%)`
+                  : `linear-gradient(135deg, #7F1D1D 0%, #991B1B 100%)`,
+                borderRadius: 20, padding: '24px 24px', marginBottom: 14,
+                border: 'none',
                 position: 'relative', overflow: 'hidden',
+                boxShadow: '0 4px 20px rgba(10, 37, 64, 0.15)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: C.textDim, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.2em', fontWeight: 700 }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.2em', fontWeight: 700 }}>
                     Kasada Toplam (Tüm Zamanlar)
                   </div>
-                  <div className="scka-mono" style={{ fontSize: 40, fontWeight: 800, color: kasaToplam >= 0 ? C.mint : C.rose, letterSpacing: '-0.03em', textShadow: kasaToplam >= 0 ? '0 0 30px rgba(95,240,172,0.35)' : '0 0 30px rgba(240,146,138,0.35)' }}>
+                  <div className="scka-mono" style={{ fontSize: 40, fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.03em' }}>
                     {kasaToplam >= 0 ? '+' : '−'}{fmt(Math.abs(kasaToplam))}
                   </div>
                   {/* Kullanılabilir / Devlete Borç kırılımı */}
                   {devleteBorcHarc > 0 && (
                     <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
                       <div>
-                        <div style={{ fontSize: 10, color: C.textFaint, marginBottom: 2 }}>✅ Kullanılabilir</div>
-                        <div className="scka-mono" style={{ fontSize: 14, fontWeight: 800, color: C.mint }}>{fmt(kasaToplam - devleteBorcHarc)}</div>
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>✅ Kullanılabilir</div>
+                        <div className="scka-mono" style={{ fontSize: 14, fontWeight: 800, color: '#6EE7B7' }}>{fmt(kasaToplam - devleteBorcHarc)}</div>
                       </div>
                       <div>
-                        <div style={{ fontSize: 10, color: C.textFaint, marginBottom: 2 }}>⚠️ Devlete Gidecek</div>
-                        <div className="scka-mono" style={{ fontSize: 14, fontWeight: 800, color: C.gold }}>{fmt(devleteBorcHarc)}</div>
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>⚠️ Devlete Gidecek</div>
+                        <div className="scka-mono" style={{ fontSize: 14, fontWeight: 800, color: '#FCD34D' }}>{fmt(devleteBorcHarc)}</div>
                       </div>
                     </div>
                   )}
                 </div>
                 {/* Bu ayın net kârı - yanda küçük */}
-                <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 14, padding: '12px 14px', minWidth: 120, textAlign: 'right', marginLeft: 12 }}>
-                  <div style={{ fontSize: 10, color: C.textDim, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: '12px 14px', minWidth: 120, textAlign: 'right', marginLeft: 12, backdropFilter: 'blur(10px)' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
                     {ayAdi(secilenAy + '-01')} Kârı
                   </div>
-                  <div className="scka-mono" style={{ fontSize: 16, fontWeight: 800, color: net >= 0 ? C.mint : C.rose }}>
+                  <div className="scka-mono" style={{ fontSize: 16, fontWeight: 800, color: net >= 0 ? '#6EE7B7' : '#FCA5A5' }}>
                     {net >= 0 ? '+' : '−'}{fmt(Math.abs(net))}
                   </div>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 24, marginTop: 18 }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.mint, fontSize: 11, marginBottom: 3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#6EE7B7', fontSize: 11, marginBottom: 3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                     <TrendingUp size={13} /> Ay Net Gelir
                   </div>
-                  <div className="scka-mono" style={{ fontSize: 17, fontWeight: 800 }}>{fmt(toplamGelir)}</div>
+                  <div className="scka-mono" style={{ fontSize: 17, fontWeight: 800, color: '#FFFFFF' }}>{fmt(toplamGelir)}</div>
                 </div>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.rose, fontSize: 11, marginBottom: 3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#FCA5A5', fontSize: 11, marginBottom: 3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                     <TrendingDown size={13} /> Ay Gider
                   </div>
-                  <div className="scka-mono" style={{ fontSize: 17, fontWeight: 800 }}>{fmt(toplamGider)}</div>
+                  <div className="scka-mono" style={{ fontSize: 17, fontWeight: 800, color: '#FFFFFF' }}>{fmt(toplamGider)}</div>
                 </div>
               </div>
             </div>
@@ -2528,7 +2535,7 @@ export default function MuhasebeApp() {
             )}
 
 
-            <button onClick={duzenleKaydet} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${C.mint}, #34CC8E)`, color: '#04140D', fontWeight: 800, fontSize: 15 }}>
+            <button onClick={duzenleKaydet} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, #0A2540, #1E3A5F)`, color: '#FFFFFF', fontWeight: 700, fontSize: 15 }}>
               Kaydet
             </button>
           </div>
