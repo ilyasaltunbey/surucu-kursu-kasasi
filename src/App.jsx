@@ -363,6 +363,7 @@ export default function MuhasebeApp() {
   const [secilenGiderKat, setSecilenGiderKat] = useState(null);
   const [aramaMetni, setAramaMetni] = useState('');
   const [acikSinavTarihi, setAcikSinavTarihi] = useState(null); // tıklanan sınav tarihi
+  const [kiyasKategori, setKiyasKategori] = useState(''); // kategori kıyaslama seçimi
   const [listeKategoriFiltre, setListeKategoriFiltre] = useState('');
   const [listeSiralama, setListeSiralama] = useState('yeni'); // 'yeni' veya 'eski'
   const [sonKayitMesaji, setSonKayitMesaji] = useState(null);
@@ -697,6 +698,24 @@ export default function MuhasebeApp() {
   }, [buAyKayitlar]);
   const maxGiderKat = giderKategorileri.length ? Math.max(...giderKategorileri.map(g => g.tutar)) : 1;
   const maxGelirKat = gelirKategorileri.length ? Math.max(...gelirKategorileri.map((g) => g.tutar)) : 1;
+
+  // Kategori kıyaslama: seçili kategorinin son 12 aydaki toplamı
+  const kiyasVerisi = useMemo(() => {
+    if (!kiyasKategori) return [];
+    const [tipK, katK] = kiyasKategori.split(':');
+    const [yil, ay] = secilenAy.split('-').map(Number);
+    const sonuc = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(yil, ay - 1 - i, 1);
+      const anahtar = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const ayKayitlar = kayitlar.filter((k) => ayAnahtari(k.tarih) === anahtar && k.tip === tipK && k.kategori === katK && k.odendiMi !== false);
+      const toplam = ayKayitlar.reduce((s, k) => s + k.kalan, 0);
+      sonuc.push({ anahtar, ayAdi: ayAdi(anahtar + '-01'), toplam, kayitSayisi: ayKayitlar.length });
+    }
+    return sonuc;
+  }, [kiyasKategori, kayitlar, secilenAy]);
+  const kiyasMax = kiyasVerisi.length ? Math.max(...kiyasVerisi.map((k) => k.toplam), 1) : 1;
+  const kiyasOrt = kiyasVerisi.filter((k) => k.toplam > 0).length ? kiyasVerisi.filter((k) => k.toplam > 0).reduce((s, k) => s + k.toplam, 0) / kiyasVerisi.filter((k) => k.toplam > 0).length : 0;
 
   const egitmenKirilimi = useMemo(() => {
     return EGITMENLER.map((e) => {
@@ -2123,6 +2142,54 @@ export default function MuhasebeApp() {
                 })}
               </div>
             )}
+
+            {/* Kategori Kıyaslama - Son 12 Ay */}
+            <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: C.blue, textTransform: 'uppercase', letterSpacing: '0.1em' }}>📊 Kategori Kıyaslama (Son 12 Ay)</div>
+              <div style={{ fontSize: 11, color: C.textFaint, marginBottom: 12 }}>Bir kategori seç, o kalemin her ay ne kadar olduğuna bak. Örn: elektrik faturası ne kadar zamlanmış?</div>
+              <select value={kiyasKategori} onChange={(e) => setKiyasKategori(e.target.value)} style={{ ...inputStyle, marginBottom: 14 }}>
+                <option value="">Kategori seç...</option>
+                <optgroup label="Gelir">
+                  {GELIR_KATEGORILERI.filter((k) => k.id !== 'transfer_gelen' && k.id !== 'devreden_bakiye').map((k) => <option key={'g_' + k.id} value={'gelir:' + k.id}>{k.isim}</option>)}
+                </optgroup>
+                <optgroup label="Gider">
+                  {GIDER_KATEGORILERI.filter((k) => k.id !== 'transfer_giden').map((k) => <option key={'d_' + k.id} value={'gider:' + k.id}>{k.isim}</option>)}
+                </optgroup>
+              </select>
+
+              {kiyasKategori && kiyasVerisi.length > 0 && (
+                <>
+                  {kiyasOrt > 0 && (
+                    <div style={{ background: C.bg, borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontSize: 12, color: C.textDim, border: `1px solid ${C.border}` }}>
+                      12 aylık ortalama: <strong style={{ color: C.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(kiyasOrt)}</strong> · Toplam kayıt olan ay: {kiyasVerisi.filter((k) => k.toplam > 0).length}
+                    </div>
+                  )}
+                  {kiyasVerisi.map((v) => {
+                    const buAyMi = v.anahtar === secilenAy;
+                    const oranli = v.toplam / kiyasMax;
+                    return (
+                      <div key={v.anahtar} style={{ marginBottom: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                          <span style={{ color: buAyMi ? C.blue : C.text, fontWeight: buAyMi ? 800 : 600 }}>
+                            {v.ayAdi}{buAyMi ? ' (bu ay)' : ''}
+                            {v.kayitSayisi > 0 && <span style={{ color: C.textFaint, marginLeft: 6, fontWeight: 500 }}>· {v.kayitSayisi} kayıt</span>}
+                          </span>
+                          <span style={{ fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: v.toplam === 0 ? C.textFaint : (buAyMi ? C.blue : C.text) }}>
+                            {v.toplam === 0 ? '—' : fmt(v.toplam)}
+                          </span>
+                        </div>
+                        <div style={{ height: 6, background: C.bg, borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${oranli * 100}%`, background: buAyMi ? `linear-gradient(90deg, ${C.blue}, ${C.blueDeep})` : (v.toplam > 0 ? C.textFaint : 'transparent'), borderRadius: 3, transition: 'width 0.3s' }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+              {kiyasKategori && kiyasVerisi.every((v) => v.toplam === 0) && (
+                <div style={{ color: C.textFaint, fontSize: 12, textAlign: 'center', padding: '10px 0' }}>Bu kategoride son 12 ayda kayıt yok.</div>
+              )}
+            </div>
           </>
         )}
 
