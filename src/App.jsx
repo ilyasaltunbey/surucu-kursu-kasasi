@@ -60,6 +60,7 @@ const GELIR_KATEGORILERI = [
   { id: 'harc', isim: 'Harç Geliri' },
   { id: 'komisyon', isim: 'Komisyon Geliri' },
   { id: 'devreden_bakiye', isim: 'Devreden Bakiye (Başlangıç)' },
+  { id: 'transfer_gelen', isim: 'Kasa İçi Transfer (Gelen)' },
 ];
 
 const GIDER_KATEGORILERI = [
@@ -76,6 +77,7 @@ const GIDER_KATEGORILERI = [
   { id: 'harc_odeme', isim: 'Harç Ödemesi (Devlete)' },
   { id: 'kisisel', isim: 'Kişisel Çekim' },
   { id: 'gecici_cekim', isim: 'Geçici Çekim / Avans' },
+  { id: 'transfer_giden', isim: 'Kasa İçi Transfer (Giden)' },
   { id: 'diger', isim: 'Diğer' },
 ];
 
@@ -90,7 +92,7 @@ const ISLEM_YAPAN = [
   { id: 'sevgi', isim: 'Sevgi Hanım' },
 ];
 
-const RAPOR_PIN = '1234';
+const VARSAYILAN_RAPOR_PIN = '1234';
 
 const bugun = () => {
   const d = new Date();
@@ -188,6 +190,7 @@ export default function MuhasebeApp() {
   const [SINAV_TARIHLERI, setSINAV_TARIHLERI] = useState(() => depoYukle('skk_sinav_tarihleri', VARSAYILAN_SINAV_TARIHLERI));
   const [RUTIN_ODEMELER, setRUTIN_ODEMELER] = useState(() => depoYukle('skk_rutin_odemeler', VARSAYILAN_RUTIN_ODEMELER));
   const [DEVLET_HARC_SABIT, setDEVLET_HARC_SABIT] = useState(() => depoYukle('skk_devlet_harc_sabit', 2000));
+  const [RAPOR_PIN, setRAPOR_PIN] = useState(() => depoYukle('skk_rapor_pin', VARSAYILAN_RAPOR_PIN));
   const ayarlarYuklendi = React.useRef(false);
 
   // İlk yüklemede Supabase'den ayarları çek (yoksa varsayılanları oraya yaz)
@@ -216,6 +219,9 @@ export default function MuhasebeApp() {
 
       if (map.devlet_harc_sabit !== undefined) setDEVLET_HARC_SABIT(map.devlet_harc_sabit);
       else await supabase.from('ayarlar').upsert({ id: 'devlet_harc_sabit', veri: 2000 });
+
+      if (map.rapor_pin) setRAPOR_PIN(map.rapor_pin);
+      else await supabase.from('ayarlar').upsert({ id: 'rapor_pin', veri: VARSAYILAN_RAPOR_PIN });
 
       ayarlarYuklendi.current = true;
     };
@@ -271,6 +277,14 @@ export default function MuhasebeApp() {
     });
   }, [RUTIN_ODEMELER]);
 
+  useEffect(() => {
+    if (!ayarlarYuklendi.current) return;
+    depoKaydet('skk_rapor_pin', RAPOR_PIN);
+    supabase.from('ayarlar').upsert({ id: 'rapor_pin', veri: RAPOR_PIN }).then(({ error }) => {
+      if (error) setHataMesaji('Rapor şifresi kaydedilemedi: ' + error.message);
+    });
+  }, [RAPOR_PIN]);
+
   // Ayarlar başka bir cihazda değişirse gerçek zamanlı yansıt
   useEffect(() => {
     const kanal = supabase
@@ -284,6 +298,7 @@ export default function MuhasebeApp() {
         if (row.id === 'sinav_tarihleri') setSINAV_TARIHLERI(row.veri);
         if (row.id === 'devlet_harc_sabit') setDEVLET_HARC_SABIT(row.veri);
         if (row.id === 'rutin_odemeler') setRUTIN_ODEMELER(row.veri);
+        if (row.id === 'rapor_pin') setRAPOR_PIN(row.veri);
       })
       .subscribe();
     return () => { supabase.removeChannel(kanal); };
@@ -338,6 +353,7 @@ export default function MuhasebeApp() {
   const [raporAcik, setRaporAcik] = useState(false);
 
   const [tip, setTip] = useState('gelir');
+  const [transferModal, setTransferModal] = useState(null); // {kaynak, hedef, tutar, not, tarih}
   const [form, setForm] = useState({
     tarih: bugun(), aciklama: '', kategori: '', tutar: '', harcAlinan: '', sinavTarihi: '', odendiMi: true, personel: '', egitmen: '', arac: '', odeme: 'nakit', islemYapan: 'sevgi', not: '',
   });
@@ -429,6 +445,59 @@ export default function MuhasebeApp() {
   // Kayıt düzenleme state'i
   const [duzenleModal, setDuzenleModal] = useState(null); // düzenlenen kayıt objesi
 
+  const transferKaydet = async () => {
+    if (!transferModal || !transferModal.tutar || !transferModal.kaynak || !transferModal.hedef) return;
+    if (transferModal.kaynak === transferModal.hedef) {
+      setHataMesaji('Kaynak ve hedef hesap aynı olamaz');
+      return;
+    }
+    const tutar = parseFloat(transferModal.tutar) || 0;
+    if (tutar <= 0) return;
+
+    const kaynakIsim = ODEME_TIPLERI.find(o => o.id === transferModal.kaynak)?.isim || transferModal.kaynak;
+    const hedefIsim = ODEME_TIPLERI.find(o => o.id === transferModal.hedef)?.isim || transferModal.hedef;
+    const aciklama = `Transfer: ${kaynakIsim} → ${hedefIsim}${transferModal.not ? ' · ' + transferModal.not : ''}`;
+
+    // Giden kayıt (kaynak hesaptan çıkış)
+    const giden = {
+      tip: 'gider',
+      tarih: transferModal.tarih || bugun(),
+      aciklama,
+      kategori: 'transfer_giden',
+      tutar, kalan: tutar,
+      egitmen: '', arac: '',
+      odeme: transferModal.kaynak,
+      islemYapan: form.islemYapan || 'ilyas',
+      not: '',
+      sinavTarihi: '',
+      odendiMi: true,
+    };
+    // Gelen kayıt (hedef hesaba giriş)
+    const gelen = {
+      tip: 'gelir',
+      tarih: transferModal.tarih || bugun(),
+      aciklama,
+      kategori: 'transfer_gelen',
+      tutar, kalan: tutar,
+      egitmen: '', arac: '',
+      odeme: transferModal.hedef,
+      islemYapan: form.islemYapan || 'ilyas',
+      not: '',
+      sinavTarihi: '',
+      odendiMi: true,
+    };
+
+    const { data: gidenData, error: err1 } = await supabase.from('kayitlar').insert(kayitToDb(giden)).select().single();
+    if (err1) { setHataMesaji('Transfer (giden) kaydedilemedi: ' + err1.message); return; }
+    const { data: gelenData, error: err2 } = await supabase.from('kayitlar').insert(kayitToDb(gelen)).select().single();
+    if (err2) { setHataMesaji('Transfer (gelen) kaydedilemedi: ' + err2.message); return; }
+
+    setKayitlar([...kayitlar, dbdenKayit(gidenData), dbdenKayit(gelenData)]);
+    setTransferModal(null);
+    setSonKayitMesaji('Transfer kaydedildi: ' + fmt(tutar));
+    setTimeout(() => setSonKayitMesaji(null), 2500);
+  };
+
   const duzenleKaydet = async () => {
     if (!duzenleModal) return;
     const { error } = await supabase
@@ -464,7 +533,7 @@ export default function MuhasebeApp() {
 
   // Net hesap: "Geçici Çekim/Avans" hiçbir şekilde kâr/zarara dahil edilmez
   // Veresiye (ödenmemiş) harç kayıtları da gelire dahil edilmez, ödenince otomatik dahil olur
-  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.kategori !== 'harc_odeme' && k.kategori !== 'kisisel' && k.kategori !== 'devreden_bakiye' && k.odendiMi !== false;
+  const karZararaDahil = (k) => k.kategori !== 'gecici_cekim' && k.kategori !== 'harc_odeme' && k.kategori !== 'kisisel' && k.kategori !== 'devreden_bakiye' && k.kategori !== 'transfer_gelen' && k.kategori !== 'transfer_giden' && k.odendiMi !== false;
 
   const gecenAyGelir = gecenAyKayitlar.filter((k) => k.tip === 'gelir' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
   const gecenAyGider = gecenAyKayitlar.filter((k) => k.tip === 'gider' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
@@ -490,13 +559,14 @@ export default function MuhasebeApp() {
   // Devlete Borç Harç: Sınav tarihi bazlı kırılım
   const devleteBorcSinavBazli = useMemo(() => {
     // Her sınav tarihi için: tahsil edilen harçların devlete giden kısmı
+    // NOT: Veresiye harçlar da dahil - çünkü o kişiler de sınava girecek, devlete harçları yatırılacak
     const tahsilatMap = {};
-    kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi !== false && k.sinavTarihi).forEach((k) => {
+    kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.sinavTarihi).forEach((k) => {
       if (!tahsilatMap[k.sinavTarihi]) tahsilatMap[k.sinavTarihi] = { tahsilat: 0, odeme: 0 };
       tahsilatMap[k.sinavTarihi].tahsilat += (k.tutar - k.kalan);
     });
     // Sınav tarihi belirtilmemiş harçlar
-    const sinavsiziTahsilat = kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && k.odendiMi !== false && !k.sinavTarihi).reduce((s, k) => s + (k.tutar - k.kalan), 0);
+    const sinavsiziTahsilat = kayitlar.filter((k) => k.tip === 'gelir' && k.kategori === 'harc' && !k.sinavTarihi).reduce((s, k) => s + (k.tutar - k.kalan), 0);
 
     // Her ödeme için sınav tarihini düş
     kayitlar.filter((k) => k.tip === 'gider' && k.kategori === 'harc_odeme').forEach((k) => {
@@ -1082,24 +1152,8 @@ export default function MuhasebeApp() {
             </button>
           </div>
 
-          {/* Sınav öncesi uyarı - sekreter görsün */}
-          {sinavOncesiUyarilar.length > 0 && (
-            <div style={{ background: 'rgba(240,146,138,0.1)', borderRadius: 14, padding: '14px 16px', marginBottom: 20, border: `1px solid rgba(240,146,138,0.35)` }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: C.rose, marginBottom: 8 }}>⚠ Sınav Yaklaşıyor — Bekleyen Harçlar</div>
-              {sinavOncesiUyarilar.map((u) => {
-                const kalanGun = Math.ceil((new Date(u.tarih) - new Date(bugun())) / (1000 * 60 * 60 * 24));
-                return (
-                  <div key={u.etiket} style={{ fontSize: 13, color: C.text, marginBottom: 4 }}>
-                    <strong>{u.etiket}</strong> — {u.kisiSayisi} kişi ödeme yapmadı
-                    <span style={{ color: C.rose, marginLeft: 8, fontSize: 11 }}>({kalanGun} gün kaldı)</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
           {/* Tip seçici */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
             {['gelir', 'gider'].map((t) => (
               <button
                 key={t}
@@ -1107,8 +1161,8 @@ export default function MuhasebeApp() {
                 style={{
                   flex: 1, padding: '18px', borderRadius: 16, cursor: 'pointer',
                   background: tip === t ? (t === 'gelir' ? `linear-gradient(135deg, ${C.mintDeep}, #1F5C42)` : `linear-gradient(135deg, ${C.roseDeep}, #5A2B25)`) : C.panel,
-                  color: tip === t ? C.text : C.textDim,
-                  fontWeight: 800, fontSize: 15,
+                  color: tip === t ? '#FFFFFF' : C.textDim,
+                  fontWeight: 700, fontSize: 15,
                   border: tip === t ? 'none' : `1px solid ${C.border}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                   transition: 'all 0.15s',
@@ -1119,6 +1173,20 @@ export default function MuhasebeApp() {
               </button>
             ))}
           </div>
+
+          {/* Transfer Butonu */}
+          <button
+            onClick={() => setTransferModal({ kaynak: 'pos', hedef: 'havale', tutar: '', not: '', tarih: bugun() })}
+            style={{
+              width: '100%', padding: '14px', borderRadius: 14, cursor: 'pointer', marginBottom: 20,
+              background: `linear-gradient(135deg, ${C.blue}, ${C.blueDeep})`, color: '#FFFFFF',
+              border: 'none', fontWeight: 700, fontSize: 14,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              boxShadow: '0 2px 12px rgba(10, 37, 64, 0.2)',
+            }}
+          >
+            <ArrowLeftRight size={16} /> Transfer / Kasa İçi Aktarım
+          </button>
 
           {/* Form kartı */}
           <div className="scka-card" style={{ background: `linear-gradient(165deg, ${C.panel} 0%, ${C.panelAlt} 100%)`, borderRadius: 20, padding: '22px', border: `1px solid ${C.border}`, marginBottom: 18, boxShadow: '0 20px 60px -30px rgba(0,0,0,0.6)' }}>
@@ -1453,6 +1521,46 @@ export default function MuhasebeApp() {
                     >
                       Ödendi
                     </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Sekreter için Uyarılar - EN ALTTA */}
+        {(sinavOncesiUyarilar.length > 0 || beklenenOdemeler.length > 0) && (
+          <div style={{ maxWidth: 520, margin: '14px auto 0' }}>
+            {sinavOncesiUyarilar.length > 0 && (
+              <div style={{ background: 'rgba(220,38,38,0.06)', borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: '1px solid rgba(220,38,38,0.3)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: C.rose, textTransform: 'uppercase', letterSpacing: '0.1em' }}>⚠ Sınav Yaklaşıyor — Bekleyen Harçlar</div>
+                {sinavOncesiUyarilar.map((u) => {
+                  const kalanGun = Math.ceil((new Date(u.tarih) - new Date(bugun())) / (1000 * 60 * 60 * 24));
+                  return (
+                    <div key={u.etiket} style={{ fontSize: 13, color: C.text, marginBottom: 4 }}>
+                      <strong>{u.etiket}</strong> — {u.kisiSayisi} kişi ödeme yapmadı
+                      <span style={{ color: C.rose, marginLeft: 8, fontSize: 11 }}>({kalanGun} gün kaldı)</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {beklenenOdemeler.length > 0 && (
+              <div style={{ background: 'rgba(217,119,6,0.06)', borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: '1px solid rgba(217,119,6,0.3)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: C.gold, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  📅 Beklenen Ödemeler ({beklenenOdemeler.length})
+                </div>
+                <div style={{ fontSize: 11, color: C.textFaint, marginBottom: 10 }}>Bu ay henüz yapılmamış rutin ödemeler</div>
+                {beklenenOdemeler.map((r) => (
+                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{r.isim}</span>
+                      <span style={{ fontSize: 11, color: r.gunKaldi < 0 ? C.rose : C.textFaint, marginLeft: 8, fontWeight: 700 }}>
+                        {r.gunKaldi < 0 ? `${Math.abs(r.gunKaldi)} gün gecikti!` : r.gunKaldi === 0 ? 'Bugün!' : `${r.gunKaldi} gün kaldı`}
+                      </span>
+                    </div>
+                    <span style={{ fontWeight: 800, fontSize: 13, color: C.gold, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(r.tutar)}</span>
                   </div>
                 ))}
               </div>
@@ -2032,25 +2140,55 @@ export default function MuhasebeApp() {
                   </div>
                 </div>
 
-                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 10, fontWeight: 700 }}>O Günün Hareketi:</div>
+                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gelen Ödemeler:</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
                   {[
                     { label: 'Nakit', icon: Banknote, key: 'nakit' },
                     { label: 'Havale', icon: ArrowLeftRight, key: 'havale' },
                     { label: 'POS', icon: CreditCard, key: 'pos' },
                   ].map(({ label, icon: Icon, key }) => (
-                    <div key={key} style={{ flex: 1, background: C.bg, borderRadius: 14, padding: '10px 10px', border: `1px solid ${C.border}` }}>
+                    <div key={'gelir_' + key} style={{ flex: 1, background: 'rgba(5,150,105,0.05)', borderRadius: 14, padding: '12px 10px', border: '1px solid rgba(5,150,105,0.25)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
-                        <Icon size={12} style={{ color: C.textDim }} />
-                        <span style={{ fontSize: 10, color: C.textDim, fontWeight: 700, textTransform: 'uppercase' }}>{label}</span>
+                        <Icon size={12} style={{ color: C.mint }} />
+                        <span style={{ fontSize: 10, color: C.mint, fontWeight: 700, textTransform: 'uppercase' }}>{label}</span>
                       </div>
-                      <div style={{ fontSize: 11, color: C.mint, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>↑ {fmt(kasaGunGelir[key])}</div>
-                      <div style={{ fontSize: 11, color: C.rose, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>↓ {fmt(kasaGunGider[key])}</div>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: kasaGun[key] >= 0 ? C.mint : C.rose, fontFamily: "'JetBrains Mono', monospace", marginTop: 4, borderTop: `1px solid ${C.border}`, paddingTop: 4 }}>
-                        {kasaGun[key] >= 0 ? '+' : '−'}{fmt(Math.abs(kasaGun[key]))}
-                      </div>
+                      <div style={{ fontSize: 14, color: C.mint, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>+{fmt(kasaGunGelir[key])}</div>
                     </div>
                   ))}
+                </div>
+
+                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Giden Ödemeler:</div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                  {[
+                    { label: 'Nakit', icon: Banknote, key: 'nakit' },
+                    { label: 'Havale', icon: ArrowLeftRight, key: 'havale' },
+                    { label: 'POS', icon: CreditCard, key: 'pos' },
+                  ].map(({ label, icon: Icon, key }) => (
+                    <div key={'gider_' + key} style={{ flex: 1, background: 'rgba(220,38,38,0.05)', borderRadius: 14, padding: '12px 10px', border: '1px solid rgba(220,38,38,0.25)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+                        <Icon size={12} style={{ color: C.rose }} />
+                        <span style={{ fontSize: 10, color: C.rose, fontWeight: 700, textTransform: 'uppercase' }}>{label}</span>
+                      </div>
+                      <div style={{ fontSize: 14, color: C.rose, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>−{fmt(kasaGunGider[key])}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Net Toplam - büyük tek kutu */}
+                <div style={{ background: `linear-gradient(135deg, ${C.blue}, ${C.blueDeep})`, borderRadius: 14, padding: '16px 20px', marginBottom: 14, color: '#FFF' }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Günün Net Kasa Hareketi</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: (kasaGun.nakit + kasaGun.havale + kasaGun.pos) >= 0 ? '#6EE7B7' : '#FCA5A5' }}>
+                        {(kasaGun.nakit + kasaGun.havale + kasaGun.pos) >= 0 ? '+' : '−'}{fmt(Math.abs(kasaGun.nakit + kasaGun.havale + kasaGun.pos))}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: 11, color: 'rgba(255,255,255,0.8)', fontFamily: "'JetBrains Mono', monospace" }}>
+                      <div>Nakit: {kasaGun.nakit >= 0 ? '+' : '−'}{fmt(Math.abs(kasaGun.nakit))}</div>
+                      <div>Havale: {kasaGun.havale >= 0 ? '+' : '−'}{fmt(Math.abs(kasaGun.havale))}</div>
+                      <div>POS: {kasaGun.pos >= 0 ? '+' : '−'}{fmt(Math.abs(kasaGun.pos))}</div>
+                    </div>
+                  </div>
                 </div>
 
                 {secilenGunKayitlar.length === 0 && <div style={{ color: C.textFaint, fontSize: 13 }}>Bu gün için kayıt yok.</div>}
@@ -2225,6 +2363,18 @@ export default function MuhasebeApp() {
                   <Plus size={16} />
                 </button>
               </div>
+            </div>
+
+            <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Rapor Şifresi</div>
+              <div style={{ fontSize: 11, color: C.textFaint, marginBottom: 14 }}>Rapor ekranına giriş için kullanılan şifre. Değiştirdiğinde tüm cihazlarda yeni şifre geçerli olur.</div>
+              <input
+                type="text"
+                value={RAPOR_PIN}
+                onChange={(e) => setRAPOR_PIN(e.target.value)}
+                style={{ ...inputStyle, letterSpacing: '0.3em', fontFamily: "'JetBrains Mono', monospace" }}
+                placeholder="Yeni şifre"
+              />
             </div>
 
             <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
@@ -2467,6 +2617,52 @@ export default function MuhasebeApp() {
           Sürücü Kursu Kasası · Veriler bulutta saklanır
         </p>
       </div>
+
+      {/* Transfer Modalı */}
+      {transferModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 200 }}>
+          <div style={{ background: C.panel, borderRadius: '20px 20px 0 0', padding: '24px 20px', width: '100%', maxWidth: 520, border: `1px solid ${C.borderLight}`, maxHeight: '85vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <span style={{ fontWeight: 700, fontSize: 16, color: C.text }}>💸 Kasa İçi Transfer</span>
+              <button onClick={() => setTransferModal(null)} style={{ background: 'none', border: 'none', color: C.textDim, cursor: 'pointer' }}><X size={22} /></button>
+            </div>
+            <div style={{ background: 'rgba(59,130,246,0.06)', padding: '12px 14px', borderRadius: 12, marginBottom: 16, fontSize: 12, color: C.textDim, border: '1px solid rgba(59,130,246,0.2)' }}>
+              Bu işlem kâr/zarar hesabına girmez. Sadece iki hesap arasında para taşınır (POS→Havale, Nakit→Havale gibi).
+            </div>
+
+            <label style={labelStyle}>Tarih</label>
+            <input type="date" value={transferModal.tarih} onChange={(e) => setTransferModal({ ...transferModal, tarih: e.target.value })} style={{ ...inputStyle, marginBottom: 14 }} />
+
+            <label style={labelStyle}>Kaynak Hesap (nereden çıkacak)</label>
+            <select
+              value={transferModal.kaynak}
+              onChange={(e) => setTransferModal({ ...transferModal, kaynak: e.target.value })}
+              style={{ ...inputStyle, marginBottom: 14 }}
+            >
+              {ODEME_TIPLERI.map((o) => <option key={o.id} value={o.id}>{o.isim}</option>)}
+            </select>
+
+            <label style={labelStyle}>Hedef Hesap (nereye girecek)</label>
+            <select
+              value={transferModal.hedef}
+              onChange={(e) => setTransferModal({ ...transferModal, hedef: e.target.value })}
+              style={{ ...inputStyle, marginBottom: 14 }}
+            >
+              {ODEME_TIPLERI.map((o) => <option key={o.id} value={o.id}>{o.isim}</option>)}
+            </select>
+
+            <label style={labelStyle}>Tutar (₺)</label>
+            <input type="number" value={transferModal.tutar} placeholder="0" onChange={(e) => setTransferModal({ ...transferModal, tutar: e.target.value })} style={{ ...inputStyle, marginBottom: 14 }} />
+
+            <label style={labelStyle}>Not (opsiyonel)</label>
+            <input type="text" value={transferModal.not} placeholder="örn: POS gelirini bankaya çektim" onChange={(e) => setTransferModal({ ...transferModal, not: e.target.value })} style={{ ...inputStyle, marginBottom: 20 }} />
+
+            <button onClick={transferKaydet} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${C.blue}, ${C.blueDeep})`, color: '#FFFFFF', fontWeight: 700, fontSize: 15 }}>
+              Transferi Kaydet
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Kayıt Düzenleme Modalı */}
       {duzenleModal && (
