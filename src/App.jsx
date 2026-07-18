@@ -1642,6 +1642,44 @@ export default function MuhasebeApp() {
             </div>
           </div>
         )}
+
+        {/* Transfer Modalı (sekreter ekranında da) */}
+        {transferModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 200 }}>
+            <div style={{ background: C.panel, borderRadius: '20px 20px 0 0', padding: '24px 20px', width: '100%', maxWidth: 520, border: `1px solid ${C.borderLight}`, maxHeight: '85vh', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                <span style={{ fontWeight: 700, fontSize: 16, color: C.text }}>💸 Kasa İçi Transfer</span>
+                <button onClick={() => setTransferModal(null)} style={{ background: 'none', border: 'none', color: C.textDim, cursor: 'pointer' }}><X size={22} /></button>
+              </div>
+              <div style={{ background: 'rgba(59,130,246,0.06)', padding: '12px 14px', borderRadius: 12, marginBottom: 16, fontSize: 12, color: C.textDim, border: '1px solid rgba(59,130,246,0.2)' }}>
+                Bu işlem kâr/zarar hesabına girmez. Sadece iki hesap arasında para taşınır (POS→Havale, Nakit→Havale gibi).
+              </div>
+
+              <label style={labelStyle}>Tarih</label>
+              <input type="date" value={transferModal.tarih} onChange={(e) => setTransferModal({ ...transferModal, tarih: e.target.value })} style={{ ...inputStyle, marginBottom: 14 }} />
+
+              <label style={labelStyle}>Kaynak Hesap (nereden çıkacak)</label>
+              <select value={transferModal.kaynak} onChange={(e) => setTransferModal({ ...transferModal, kaynak: e.target.value })} style={{ ...inputStyle, marginBottom: 14 }}>
+                {ODEME_TIPLERI.map((o) => <option key={o.id} value={o.id}>{o.isim}</option>)}
+              </select>
+
+              <label style={labelStyle}>Hedef Hesap (nereye girecek)</label>
+              <select value={transferModal.hedef} onChange={(e) => setTransferModal({ ...transferModal, hedef: e.target.value })} style={{ ...inputStyle, marginBottom: 14 }}>
+                {ODEME_TIPLERI.map((o) => <option key={o.id} value={o.id}>{o.isim}</option>)}
+              </select>
+
+              <label style={labelStyle}>Tutar (₺)</label>
+              <input type="number" value={transferModal.tutar} placeholder="0" onChange={(e) => setTransferModal({ ...transferModal, tutar: e.target.value })} style={{ ...inputStyle, marginBottom: 14 }} />
+
+              <label style={labelStyle}>Not (opsiyonel)</label>
+              <input type="text" value={transferModal.not} placeholder="örn: POS gelirini bankaya çektim" onChange={(e) => setTransferModal({ ...transferModal, not: e.target.value })} style={{ ...inputStyle, marginBottom: 20 }} />
+
+              <button onClick={transferKaydet} style={{ width: '100%', padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${C.blue}, ${C.blueDeep})`, color: '#FFFFFF', fontWeight: 700, fontSize: 15 }}>
+                Transferi Kaydet
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
