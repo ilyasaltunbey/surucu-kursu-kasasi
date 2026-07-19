@@ -53,19 +53,22 @@ const depoKaydet = (anahtar, deger) => {
   } catch {}
 };
 
-const GELIR_KATEGORILERI = [
+// sistem: true olan kategorilere doğrudan hesap mantığı bağlıdır (harç bölüşümü, özel ders,
+// kişisel/geçici çekim, transferler, harç ödemesi, devreden bakiye). Bunların id'si SABİTTİR ve
+// silinemez; sadece görünen adı değiştirilebilir. Diğerleri serbestçe düzenlenebilir/gizlenebilir.
+const VARSAYILAN_GELIR_KATEGORILERI = [
   { id: 'kursiyer', isim: 'Kursiyer Ödemesi' },
   { id: 'ikinci_dosya', isim: '2. Direksiyon Dosyası' },
-  { id: 'ozel_ders', isim: 'Özel Ders' },
-  { id: 'harc', isim: 'Harç Geliri' },
+  { id: 'ozel_ders', isim: 'Özel Ders', sistem: true },
+  { id: 'harc', isim: 'Harç Geliri', sistem: true },
   { id: 'komisyon', isim: 'Komisyon Geliri' },
-  { id: 'devreden_bakiye', isim: 'Devreden Bakiye (Başlangıç)' },
-  { id: 'transfer_gelen', isim: 'Kasa İçi Transfer (Gelen)' },
+  { id: 'devreden_bakiye', isim: 'Devreden Bakiye (Başlangıç)', sistem: true },
+  { id: 'transfer_gelen', isim: 'Kasa İçi Transfer (Gelen)', sistem: true },
 ];
 
-const GIDER_KATEGORILERI = [
+const VARSAYILAN_GIDER_KATEGORILERI = [
   { id: 'kira', isim: 'Kira' },
-  { id: 'personel', isim: 'Personel Maaşı' },
+  { id: 'personel', isim: 'Personel Maaşı', sistem: true },
   { id: 'yakit', isim: 'Yakıt' },
   { id: 'bakim', isim: 'Arıza/Tamir' },
   { id: 'yikama', isim: 'Yıkama' },
@@ -74,12 +77,36 @@ const GIDER_KATEGORILERI = [
   { id: 'mutfak', isim: 'Mutfak/Temizlik/Kırtasiye' },
   { id: 'faturalar', isim: 'Faturalar (Elektrik/Su/İnternet)' },
   { id: 'reklam', isim: 'Reklam' },
-  { id: 'harc_odeme', isim: 'Harç Ödemesi (Devlete)' },
-  { id: 'kisisel', isim: 'Kişisel Çekim' },
-  { id: 'gecici_cekim', isim: 'Geçici Çekim / Avans' },
-  { id: 'transfer_giden', isim: 'Kasa İçi Transfer (Giden)' },
+  { id: 'harc_odeme', isim: 'Harç Ödemesi (Devlete)', sistem: true },
+  { id: 'kisisel', isim: 'Kişisel Çekim', sistem: true },
+  { id: 'gecici_cekim', isim: 'Geçici Çekim / Avans', sistem: true },
+  { id: 'transfer_giden', isim: 'Kasa İçi Transfer (Giden)', sistem: true },
   { id: 'diger', isim: 'Diğer' },
 ];
+
+// Kayıtlı kategori listesini varsayılanlarla birleştirir:
+// - Sistem/yerleşik kategoriler HER ZAMAN garanti edilir (kullanıcı ismini korur, gizli bayrağını korur).
+// - Kullanıcının eklediği özel kategoriler (ozel: true) korunur.
+// Bu sayede ileride koda yeni sistem kategorisi eklense bile kayıtlı verilerde kaybolmaz.
+const kategorileriBirlestir = (kayitli, varsayilan) => {
+  if (!Array.isArray(kayitli) || kayitli.length === 0) return varsayilan.map((k) => ({ ...k, gizli: false }));
+  const kayitliMap = {};
+  kayitli.forEach((k) => { if (k && k.id) kayitliMap[k.id] = k; });
+  const sonuc = [];
+  const eklenen = new Set();
+  varsayilan.forEach((v) => {
+    const m = kayitliMap[v.id];
+    sonuc.push({ ...v, isim: (m && m.isim) ? m.isim : v.isim, gizli: !!(m && m.gizli) });
+    eklenen.add(v.id);
+  });
+  kayitli.forEach((k) => {
+    if (k && k.id && !eklenen.has(k.id)) {
+      sonuc.push({ id: k.id, isim: k.isim || k.id, gizli: !!k.gizli, ozel: true });
+      eklenen.add(k.id);
+    }
+  });
+  return sonuc;
+};
 
 const ODEME_TIPLERI = [
   { id: 'nakit', isim: 'Nakit', icon: Banknote },
@@ -191,6 +218,8 @@ export default function MuhasebeApp() {
   const [RUTIN_ODEMELER, setRUTIN_ODEMELER] = useState(() => depoYukle('skk_rutin_odemeler', VARSAYILAN_RUTIN_ODEMELER));
   const [DEVLET_HARC_SABIT, setDEVLET_HARC_SABIT] = useState(() => depoYukle('skk_devlet_harc_sabit', 2000));
   const [RAPOR_PIN, setRAPOR_PIN] = useState(() => depoYukle('skk_rapor_pin', VARSAYILAN_RAPOR_PIN));
+  const [GELIR_KATEGORILERI, setGELIR_KATEGORILERI] = useState(() => kategorileriBirlestir(depoYukle('skk_gelir_kategorileri', VARSAYILAN_GELIR_KATEGORILERI), VARSAYILAN_GELIR_KATEGORILERI));
+  const [GIDER_KATEGORILERI, setGIDER_KATEGORILERI] = useState(() => kategorileriBirlestir(depoYukle('skk_gider_kategorileri', VARSAYILAN_GIDER_KATEGORILERI), VARSAYILAN_GIDER_KATEGORILERI));
   const ayarlarYuklendi = React.useRef(false);
 
   // İlk yüklemede Supabase'den ayarları çek (yoksa varsayılanları oraya yaz)
@@ -222,6 +251,12 @@ export default function MuhasebeApp() {
 
       if (map.rapor_pin) setRAPOR_PIN(map.rapor_pin);
       else await supabase.from('ayarlar').upsert({ id: 'rapor_pin', veri: VARSAYILAN_RAPOR_PIN });
+
+      if (map.gelir_kategorileri) setGELIR_KATEGORILERI(kategorileriBirlestir(map.gelir_kategorileri, VARSAYILAN_GELIR_KATEGORILERI));
+      else await supabase.from('ayarlar').upsert({ id: 'gelir_kategorileri', veri: VARSAYILAN_GELIR_KATEGORILERI });
+
+      if (map.gider_kategorileri) setGIDER_KATEGORILERI(kategorileriBirlestir(map.gider_kategorileri, VARSAYILAN_GIDER_KATEGORILERI));
+      else await supabase.from('ayarlar').upsert({ id: 'gider_kategorileri', veri: VARSAYILAN_GIDER_KATEGORILERI });
 
       ayarlarYuklendi.current = true;
     };
@@ -285,6 +320,22 @@ export default function MuhasebeApp() {
     });
   }, [RAPOR_PIN]);
 
+  useEffect(() => {
+    if (!ayarlarYuklendi.current) return;
+    depoKaydet('skk_gelir_kategorileri', GELIR_KATEGORILERI);
+    supabase.from('ayarlar').upsert({ id: 'gelir_kategorileri', veri: GELIR_KATEGORILERI }).then(({ error }) => {
+      if (error) setHataMesaji('Gelir kategorileri kaydedilemedi: ' + error.message);
+    });
+  }, [GELIR_KATEGORILERI]);
+
+  useEffect(() => {
+    if (!ayarlarYuklendi.current) return;
+    depoKaydet('skk_gider_kategorileri', GIDER_KATEGORILERI);
+    supabase.from('ayarlar').upsert({ id: 'gider_kategorileri', veri: GIDER_KATEGORILERI }).then(({ error }) => {
+      if (error) setHataMesaji('Gider kategorileri kaydedilemedi: ' + error.message);
+    });
+  }, [GIDER_KATEGORILERI]);
+
   // Ayarlar başka bir cihazda değişirse gerçek zamanlı yansıt
   useEffect(() => {
     const kanal = supabase
@@ -299,6 +350,8 @@ export default function MuhasebeApp() {
         if (row.id === 'devlet_harc_sabit') setDEVLET_HARC_SABIT(row.veri);
         if (row.id === 'rutin_odemeler') setRUTIN_ODEMELER(row.veri);
         if (row.id === 'rapor_pin') setRAPOR_PIN(row.veri);
+        if (row.id === 'gelir_kategorileri') setGELIR_KATEGORILERI(kategorileriBirlestir(row.veri, VARSAYILAN_GELIR_KATEGORILERI));
+        if (row.id === 'gider_kategorileri') setGIDER_KATEGORILERI(kategorileriBirlestir(row.veri, VARSAYILAN_GIDER_KATEGORILERI));
       })
       .subscribe();
     return () => { supabase.removeChannel(kanal); };
@@ -1077,6 +1130,37 @@ export default function MuhasebeApp() {
     setARACLAR([...ARACLAR, { id, isim: isim.trim() }]);
   };
 
+  // ---- Kategori yönetimi ----
+  const katIsimGuncelle = (tip, id, yeniIsim) => {
+    const set = tip === 'gelir' ? setGELIR_KATEGORILERI : setGIDER_KATEGORILERI;
+    set((liste) => liste.map((k) => k.id === id ? { ...k, isim: yeniIsim } : k));
+  };
+  const katGizleAc = (tip, id) => {
+    const set = tip === 'gelir' ? setGELIR_KATEGORILERI : setGIDER_KATEGORILERI;
+    set((liste) => liste.map((k) => k.id === id ? { ...k, gizli: !k.gizli } : k));
+  };
+  const katSil = (tip, id) => {
+    // Sadece kullanıcının eklediği (ozel) kategoriler silinebilir; sistem/yerleşik kategoriler silinemez.
+    const liste = tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI;
+    const kat = liste.find((k) => k.id === id);
+    if (!kat || !kat.ozel) return;
+    const kullanan = kayitlar.some((k) => k.kategori === id);
+    if (kullanan) {
+      window.alert(`"${kat.isim}" kategorisinde kayıtlı işlemler var, silinemez. Bunun yerine "gizle" ile listeden kaldırabilirsin (eski kayıtlar korunur).`);
+      return;
+    }
+    if (!window.confirm(`"${kat.isim}" kategorisini silmek istediğinize emin misiniz?`)) return;
+    const set = tip === 'gelir' ? setGELIR_KATEGORILERI : setGIDER_KATEGORILERI;
+    set((l) => l.filter((k) => k.id !== id));
+  };
+  const katEkle = (tip, isim) => {
+    if (!isim.trim()) return;
+    const onek = tip === 'gelir' ? 'ozelg_' : 'ozeld_';
+    const id = onek + isim.toLowerCase().replace(/[^a-z0-9ğüşıöç]/gi, '_') + '_' + Date.now();
+    const set = tip === 'gelir' ? setGELIR_KATEGORILERI : setGIDER_KATEGORILERI;
+    set((l) => [...l, { id, isim: isim.trim(), ozel: true, gizli: false }]);
+  };
+
   const sinavTarihiSil = (id) => setSINAV_TARIHLERI(SINAV_TARIHLERI.filter((s) => s.id !== id));
   const sinavTarihiEkle = (etiket, tarih) => {
     if (!etiket.trim() || !tarih) return;
@@ -1086,6 +1170,8 @@ export default function MuhasebeApp() {
 
   const [yeniEgitmenAdi, setYeniEgitmenAdi] = useState('');
   const [yeniAracAdi, setYeniAracAdi] = useState('');
+  const [yeniGelirKat, setYeniGelirKat] = useState('');
+  const [yeniGiderKat, setYeniGiderKat] = useState('');
   const [yeniSinavEtiket, setYeniSinavEtiket] = useState('');
   const [yeniSinavTarih, setYeniSinavTarih] = useState('');
 
@@ -1225,7 +1311,7 @@ export default function MuhasebeApp() {
               style={{ ...inputStyle, marginBottom: 14 }}
             >
               <option value="">Kategori seç</option>
-              {(tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI).map((k) => <option key={k.id} value={k.id}>{k.isim}</option>)}
+              {(tip === 'gelir' ? GELIR_KATEGORILERI : GIDER_KATEGORILERI).filter((k) => !k.gizli).map((k) => <option key={k.id} value={k.id}>{k.isim}</option>)}
             </select>
 
             {tip === 'gider' && form.kategori === 'personel' && (
@@ -2463,6 +2549,110 @@ export default function MuhasebeApp() {
                 />
                 <button
                   onClick={() => { aracEkle(yeniAracAdi); setYeniAracAdi(''); }}
+                  style={{ background: C.mint, border: 'none', borderRadius: 10, color: '#062017', cursor: 'pointer', padding: '0 16px', fontWeight: 800 }}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: C.mint, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gelir Kategorileri</div>
+              <div style={{ fontSize: 11, color: C.textFaint, marginBottom: 14 }}>Adı değiştirmek için yaz. <Lock size={11} style={{ verticalAlign: 'middle' }} /> işaretli kategoriler hesap mantığına bağlıdır, silinemez ama adı değiştirilebilir. Kullanmadığın kategoriyi gizlersen girişte çıkmaz, eski kayıtların korunur.</div>
+              {GELIR_KATEGORILERI.map((k) => (
+                <div key={k.id} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10, opacity: k.gizli ? 0.5 : 1 }}>
+                  <input
+                    type="text"
+                    value={k.isim}
+                    onChange={(ev) => katIsimGuncelle('gelir', k.id, ev.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  {k.sistem && (
+                    <span title="Sistem kategorisi — silinemez, hesap mantığına bağlı" style={{ color: C.textFaint, display: 'flex', alignItems: 'center', padding: '0 2px' }}>
+                      <Lock size={14} />
+                    </span>
+                  )}
+                  <button
+                    onClick={() => katGizleAc('gelir', k.id)}
+                    title={k.gizli ? 'Listede göster' : 'Girişte gizle'}
+                    style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 10, color: k.gizli ? C.gold : C.textDim, cursor: 'pointer', padding: '10px 11px' }}
+                  >
+                    {k.gizli ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                  {k.ozel && (
+                    <button
+                      onClick={() => katSil('gelir', k.id)}
+                      title="Sil"
+                      style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 10, color: C.rose, cursor: 'pointer', padding: '10px 11px' }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <input
+                  type="text"
+                  placeholder="Yeni gelir kategorisi..."
+                  value={yeniGelirKat}
+                  onChange={(e) => setYeniGelirKat(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { katEkle('gelir', yeniGelirKat); setYeniGelirKat(''); } }}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button
+                  onClick={() => { katEkle('gelir', yeniGelirKat); setYeniGelirKat(''); }}
+                  style={{ background: C.mint, border: 'none', borderRadius: 10, color: '#062017', cursor: 'pointer', padding: '0 16px', fontWeight: 800 }}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: C.rose, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gider Kategorileri</div>
+              <div style={{ fontSize: 11, color: C.textFaint, marginBottom: 14 }}>Adı değiştirmek için yaz. <Lock size={11} style={{ verticalAlign: 'middle' }} /> işaretli kategoriler hesap mantığına bağlıdır, silinemez ama adı değiştirilebilir. Kullanmadığın kategoriyi gizlersen girişte çıkmaz, eski kayıtların korunur.</div>
+              {GIDER_KATEGORILERI.map((k) => (
+                <div key={k.id} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10, opacity: k.gizli ? 0.5 : 1 }}>
+                  <input
+                    type="text"
+                    value={k.isim}
+                    onChange={(ev) => katIsimGuncelle('gider', k.id, ev.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  {k.sistem && (
+                    <span title="Sistem kategorisi — silinemez, hesap mantığına bağlı" style={{ color: C.textFaint, display: 'flex', alignItems: 'center', padding: '0 2px' }}>
+                      <Lock size={14} />
+                    </span>
+                  )}
+                  <button
+                    onClick={() => katGizleAc('gider', k.id)}
+                    title={k.gizli ? 'Listede göster' : 'Girişte gizle'}
+                    style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 10, color: k.gizli ? C.gold : C.textDim, cursor: 'pointer', padding: '10px 11px' }}
+                  >
+                    {k.gizli ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                  {k.ozel && (
+                    <button
+                      onClick={() => katSil('gider', k.id)}
+                      title="Sil"
+                      style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 10, color: C.rose, cursor: 'pointer', padding: '10px 11px' }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <input
+                  type="text"
+                  placeholder="Yeni gider kategorisi..."
+                  value={yeniGiderKat}
+                  onChange={(e) => setYeniGiderKat(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { katEkle('gider', yeniGiderKat); setYeniGiderKat(''); } }}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button
+                  onClick={() => { katEkle('gider', yeniGiderKat); setYeniGiderKat(''); }}
                   style={{ background: C.mint, border: 'none', borderRadius: 10, color: '#062017', cursor: 'pointer', padding: '0 16px', fontWeight: 800 }}
                 >
                   <Plus size={16} />
