@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus, TrendingUp, TrendingDown, Trash2, Wallet, Calendar, ChevronLeft, ChevronRight,
-  Car, Receipt, Banknote, CreditCard, ArrowLeftRight, Lock, Unlock, ArrowRight, Eye, EyeOff, X
+  Car, Receipt, Banknote, CreditCard, ArrowLeftRight, Lock, Unlock, ArrowRight, Eye, EyeOff, X, BarChart3
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -131,6 +131,12 @@ const bugun = () => {
 const ayAdi = (tarih) => new Date(tarih).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
 const ayAnahtari = (tarih) => tarih.slice(0, 7);
 const fmt = (n) => (n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' ₺';
+
+// Bir kaydın FİNANSAL/KASA tarihi: para fiilen ne zaman kasaya girdiyse o gün.
+// Veresiye harç sonradan ödendiğinde odemeTarihi dolar; günlük/aylık özet ve kasa
+// hareketleri bu tarihe göre hesaplanır (kaydın giriş tarihine değil). Diğer tüm
+// kayıtlarda odemeTarihi boştur ve kendi tarihi kullanılır.
+const etkinTarih = (k) => k.odemeTarihi || k.tarih;
 const gunSayisi = (ayKey) => {
   const [yil, ay] = ayKey.split('-').map(Number);
   return new Date(yil, ay, 0).getDate();
@@ -187,6 +193,9 @@ const dbdenKayit = (r) => ({
   not: r.not_metni || '',
   sinavTarihi: r.sinav_tarihi || '',
   odendiMi: r.odendi_mi !== false,
+  // Veresiye harç ödendi olarak işaretlendiğinde paranın fiilen kasaya girdiği gün.
+  // Boşsa kayıt kendi tarihine göre değerlendirilir.
+  odemeTarihi: r.odeme_tarihi || '',
 });
 
 const kayitToDb = (k) => ({
@@ -203,6 +212,7 @@ const kayitToDb = (k) => ({
   not_metni: k.not || null,
   sinav_tarihi: k.sinavTarihi || null,
   odendi_mi: k.odendiMi !== false,
+  odeme_tarihi: k.odemeTarihi || null,
 });
 
 export default function MuhasebeApp() {
@@ -486,12 +496,13 @@ export default function MuhasebeApp() {
   };
 
   const harcOdendiIsaretle = async (id) => {
-    const { error } = await supabase.from('kayitlar').update({ odendi_mi: true }).eq('id', id);
+    const odemeGunu = bugun();
+    const { error } = await supabase.from('kayitlar').update({ odendi_mi: true, odeme_tarihi: odemeGunu }).eq('id', id);
     if (error) {
       setHataMesaji('Güncellenemedi: ' + error.message);
       return;
     }
-    setKayitlar(kayitlar.map((k) => (k.id === id ? { ...k, odendiMi: true } : k)));
+    setKayitlar(kayitlar.map((k) => (k.id === id ? { ...k, odendiMi: true, odemeTarihi: odemeGunu } : k)));
     setSonKayitMesaji('Harç ödendi olarak işaretlendi');
     setTimeout(() => setSonKayitMesaji(null), 2200);
   };
@@ -569,12 +580,12 @@ export default function MuhasebeApp() {
   };
 
   const aylar = useMemo(() => {
-    const set = new Set(kayitlar.map((k) => ayAnahtari(k.tarih)));
+    const set = new Set(kayitlar.map((k) => ayAnahtari(etkinTarih(k))));
     set.add(ayAnahtari(bugun()));
     return Array.from(set).sort().reverse();
   }, [kayitlar]);
 
-  const buAyKayitlar = kayitlar.filter((k) => ayAnahtari(k.tarih) === secilenAy);
+  const buAyKayitlar = kayitlar.filter((k) => ayAnahtari(etkinTarih(k)) === secilenAy);
 
   // Geçen ay hesaplama (kıyaslama için)
   const gecenAy = useMemo(() => {
@@ -583,7 +594,7 @@ export default function MuhasebeApp() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   }, [secilenAy]);
 
-  const gecenAyKayitlar = kayitlar.filter((k) => ayAnahtari(k.tarih) === gecenAy);
+  const gecenAyKayitlar = kayitlar.filter((k) => ayAnahtari(etkinTarih(k)) === gecenAy);
 
   // Net hesap: "Geçici Çekim/Avans" hiçbir şekilde kâr/zarara dahil edilmez
   // Veresiye (ödenmemiş) harç kayıtları da gelire dahil edilmez, ödenince otomatik dahil olur
@@ -733,7 +744,7 @@ export default function MuhasebeApp() {
 
   // Belirli bir güne kadar (o gün dahil) birikmiş toplam kasa
   const kasaGunItibariyle = (tarih) => {
-    const gecmisKayitlar = kayitlar.filter((k) => k.tarih <= tarih);
+    const gecmisKayitlar = kayitlar.filter((k) => etkinTarih(k) <= tarih);
     const k = kasaHesapla(gecmisKayitlar);
     return k.nakit + k.havale + k.pos;
   };
@@ -761,7 +772,7 @@ export default function MuhasebeApp() {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(yil, ay - 1 - i, 1);
       const anahtar = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const ayKayitlar = kayitlar.filter((k) => ayAnahtari(k.tarih) === anahtar && k.tip === tipK && k.kategori === katK && k.odendiMi !== false);
+      const ayKayitlar = kayitlar.filter((k) => ayAnahtari(etkinTarih(k)) === anahtar && k.tip === tipK && k.kategori === katK && k.odendiMi !== false);
       const toplam = ayKayitlar.reduce((s, k) => s + k.kalan, 0);
       sonuc.push({ anahtar, ayAdi: ayAdi(anahtar + '-01'), toplam, kayitSayisi: ayKayitlar.length });
     }
@@ -843,7 +854,7 @@ export default function MuhasebeApp() {
     const data = [];
     for (let i = 1; i <= gun; i++) {
       const tarih = `${secilenAy}-${String(i).padStart(2, '0')}`;
-      const gKayitlar = kayitlar.filter((k) => k.tarih === tarih);
+      const gKayitlar = kayitlar.filter((k) => etkinTarih(k) === tarih);
       const gelir = gKayitlar.filter((k) => k.tip === 'gelir' && k.odendiMi !== false).reduce((s, k) => s + k.kalan, 0);
       const gider = gKayitlar.filter((k) => k.tip === 'gider' && karZararaDahil(k)).reduce((s, k) => s + k.kalan, 0);
       data.push({ tarih, gun: i, gelir, gider, net: gelir - gider, kayitSayisi: gKayitlar.length });
@@ -859,7 +870,7 @@ export default function MuhasebeApp() {
     return g === 0 ? 6 : g - 1;
   })();
 
-  const secilenGunKayitlar = secilenGun ? kayitlar.filter((k) => k.tarih === secilenGun) : [];
+  const secilenGunKayitlar = secilenGun ? kayitlar.filter((k) => etkinTarih(k) === secilenGun) : [];
   const kasaGun = secilenGun ? kasaHesapla(secilenGunKayitlar) : { nakit: 0, havale: 0, pos: 0 };
   const kasaGunGelir = secilenGun ? (() => {
     const s = { nakit: 0, havale: 0, pos: 0 };
@@ -2280,6 +2291,80 @@ export default function MuhasebeApp() {
         )}
 
         {gorunum === 'gunluk' && (
+          <>
+          {/* ---- Gelir / Gider Grafiği ---- */}
+          <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.textDim, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                <BarChart3 size={14} /> Gelir / Gider
+              </div>
+              <div style={{ display: 'flex', gap: 12, fontSize: 11, fontWeight: 700 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.mint }}><span style={{ width: 10, height: 10, borderRadius: 3, background: C.mint }} /> Gelir</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.rose }}><span style={{ width: 10, height: 10, borderRadius: 3, background: C.rose }} /> Gider</span>
+              </div>
+            </div>
+
+            {/* Ay toplamı: gelir vs gider yatay çubuklar */}
+            <div style={{ margin: '14px 0 6px' }}>
+              {(() => {
+                const ayMax = Math.max(toplamGelir, toplamGider, 1);
+                return (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                      <span style={{ width: 46, fontSize: 11, fontWeight: 700, color: C.textDim }}>Gelir</span>
+                      <div style={{ flex: 1, height: 22, background: C.bg, borderRadius: 7, overflow: 'hidden' }}>
+                        <div style={{ width: `${(toplamGelir / ayMax) * 100}%`, height: '100%', background: `linear-gradient(90deg, ${C.mint}, ${C.mintDeep})`, borderRadius: 7 }} />
+                      </div>
+                      <span className="scka-mono" style={{ width: 92, textAlign: 'right', fontSize: 13, fontWeight: 800, color: C.mint }}>{fmt(toplamGelir)}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 46, fontSize: 11, fontWeight: 700, color: C.textDim }}>Gider</span>
+                      <div style={{ flex: 1, height: 22, background: C.bg, borderRadius: 7, overflow: 'hidden' }}>
+                        <div style={{ width: `${(toplamGider / ayMax) * 100}%`, height: '100%', background: `linear-gradient(90deg, ${C.rose}, ${C.roseDeep})`, borderRadius: 7 }} />
+                      </div>
+                      <span className="scka-mono" style={{ width: 92, textAlign: 'right', fontSize: 13, fontWeight: 800, color: C.rose }}>{fmt(toplamGider)}</span>
+                    </div>
+                  </>
+                );
+              })()}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'baseline', gap: 8, marginTop: 10, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Net</span>
+                <span className="scka-mono" style={{ fontSize: 16, fontWeight: 800, color: net >= 0 ? C.mint : C.rose }}>{net >= 0 ? '+' : '−'}{fmt(Math.abs(net))}</span>
+              </div>
+            </div>
+
+            {/* Gün gün gelir/gider çubukları */}
+            {(() => {
+              const aktifGunler = gunlukVeri.filter((g) => g.gelir > 0 || g.gider > 0);
+              if (aktifGunler.length === 0) {
+                return <div style={{ color: C.textFaint, fontSize: 12, marginTop: 14 }}>Bu ay için henüz hareket yok.</div>;
+              }
+              const gunMax = Math.max(...aktifGunler.flatMap((g) => [g.gelir, g.gider]), 1);
+              return (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 10, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 8 }}>Gün Gün</div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, overflowX: 'auto', paddingBottom: 6, height: 132 }}>
+                    {aktifGunler.map((g) => (
+                      <button
+                        key={g.tarih}
+                        onClick={() => { setSecilenGun(g.tarih); }}
+                        title={`${g.gun}. gün — Gelir ${fmt(g.gelir)} · Gider ${fmt(g.gider)}`}
+                        style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 104 }}>
+                          <div style={{ width: 9, height: `${Math.max((g.gelir / gunMax) * 104, g.gelir > 0 ? 3 : 0)}px`, background: `linear-gradient(180deg, ${C.mint}, ${C.mintDeep})`, borderRadius: '3px 3px 0 0' }} />
+                          <div style={{ width: 9, height: `${Math.max((g.gider / gunMax) * 104, g.gider > 0 ? 3 : 0)}px`, background: `linear-gradient(180deg, ${C.rose}, ${C.roseDeep})`, borderRadius: '3px 3px 0 0' }} />
+                        </div>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: secilenGun === g.tarih ? C.blue : C.textFaint }}>{g.gun}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* ---- Gün Gün Net Takvimi ---- */}
           <div style={{ background: C.panel, borderRadius: 18, padding: '18px 20px', marginBottom: 14, border: `1px solid ${C.border}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, color: C.textDim, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
               <Calendar size={14} /> Gün Gün Net
@@ -2394,6 +2479,11 @@ export default function MuhasebeApp() {
                           <span style={{ fontSize: 13, fontWeight: 600 }}>
                             {k.aciklama}
                             {k.odendiMi === false && <span style={{ fontSize: 9, fontWeight: 800, color: C.gold, background: 'rgba(240,200,104,0.15)', padding: '2px 6px', borderRadius: 6, marginLeft: 6 }}>VERESİYE</span>}
+                            {k.odemeTarihi && k.odemeTarihi !== k.tarih && (
+                              <span style={{ fontSize: 9, fontWeight: 800, color: C.mint, background: 'rgba(5,150,105,0.12)', padding: '2px 6px', borderRadius: 6, marginLeft: 6 }}>
+                                VERESİYE TAHSİLATI · giriş {new Date(k.tarih).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
+                              </span>
+                            )}
                           </span>
                           <span style={{ fontWeight: 800, fontSize: 13, color: k.odendiMi === false ? C.textFaint : C.mint, fontFamily: "'JetBrains Mono', monospace" }}>
                             +{fmt(k.kategori === 'harc' ? k.tutar : k.kalan)}
@@ -2427,6 +2517,7 @@ export default function MuhasebeApp() {
               </div>
             )}
           </div>
+          </>
         )}
 
         {gorunum === 'egitmen' && (
