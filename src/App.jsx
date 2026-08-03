@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus, TrendingUp, TrendingDown, Trash2, Wallet, Calendar, ChevronLeft, ChevronRight,
-  Car, Receipt, Banknote, CreditCard, ArrowLeftRight, Lock, Unlock, ArrowRight, Eye, EyeOff, X, BarChart3, CheckCircle2
+  Car, Receipt, Banknote, CreditCard, ArrowLeftRight, Lock, Unlock, ArrowRight, Eye, EyeOff, X, BarChart3, CheckCircle
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -2454,7 +2454,7 @@ export default function MuhasebeApp() {
                       padding: 2, color: C.text,
                     }}
                   >
-                    {kapali && <CheckCircle2 size={11} style={{ position: 'absolute', top: 2, right: 2, color: C.mint, background: C.panel, borderRadius: '50%' }} />}
+                    {kapali && <CheckCircle size={11} style={{ position: 'absolute', top: 2, right: 2, color: C.mint, background: C.panel, borderRadius: '50%' }} />}
                     <div style={{ fontSize: 11, fontWeight: 700 }}>{g.gun}</div>
                     {aktif && <div style={{ fontSize: 8, color: yazi, fontWeight: 800, marginTop: 1, fontFamily: "'JetBrains Mono', monospace" }}>{g.net >= 0 ? '+' : ''}{(g.net / 1000).toFixed(1)}k</div>}
                   </button>
@@ -2484,7 +2484,7 @@ export default function MuhasebeApp() {
                     return (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'rgba(5,150,105,0.10)', border: `1px solid rgba(5,150,105,0.35)`, borderRadius: 12, padding: '10px 14px', marginBottom: 14 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <CheckCircle2 size={20} style={{ color: C.mint, flexShrink: 0 }} />
+                          <CheckCircle size={20} style={{ color: C.mint, flexShrink: 0 }} />
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 800, color: C.mint }}>Gün Kapatıldı · Tutuyor</div>
                             <div style={{ fontSize: 11, color: C.textDim, fontWeight: 600 }}>
