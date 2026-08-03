@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus, TrendingUp, TrendingDown, Trash2, Wallet, Calendar, ChevronLeft, ChevronRight,
-  Car, Receipt, Banknote, CreditCard, ArrowLeftRight, Lock, Unlock, ArrowRight, Eye, EyeOff, X, BarChart3, CheckCircle
+  Car, Receipt, Banknote, CreditCard, ArrowLeftRight, Lock, Unlock, ArrowRight, Eye, EyeOff, X, BarChart3
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -407,37 +407,6 @@ export default function MuhasebeApp() {
     return () => { supabase.removeChannel(kanal); };
   }, []);
 
-  // Gün sonu kapanışlarını yükle
-  useEffect(() => {
-    const yukle = async () => {
-      const { data, error } = await supabase.from('gun_kapanis').select('*');
-      if (!error && data) {
-        const map = {};
-        data.forEach((r) => { map[r.tarih] = r; });
-        setKapanislar(map);
-      }
-    };
-    yukle();
-  }, []);
-
-  // Kapanışlarda gerçek zamanlı senkron (başka cihazdan kapatınca/açınca güncelle)
-  useEffect(() => {
-    const kanal = supabase
-      .channel('gun-kapanis-degisiklikleri')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gun_kapanis' }, (payload) => {
-        if (payload.eventType === 'DELETE') {
-          setKapanislar((onceki) => { const y = { ...onceki }; delete y[payload.old.tarih]; return y; });
-        } else {
-          setKapanislar((onceki) => ({ ...onceki, [payload.new.tarih]: payload.new }));
-        }
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(kanal); };
-  }, []);
-
-  // Gün değişince "kim kapatıyor" menüsünü kapat
-  useEffect(() => { setKapatMenuAcik(false); }, [secilenGun]);
 
   // Görünüm: 'giris' (sekreter) | 'rapor' (sahip, pin korumalı)
   const [ekran, setEkran] = useState('giris');
@@ -454,9 +423,6 @@ export default function MuhasebeApp() {
   const [secilenAy, setSecilenAy] = useState(ayAnahtari(bugun()));
   const [gorunum, setGorunum] = useState('ozet');
   const [secilenGun, setSecilenGun] = useState(null);
-  // Gün sonu kapanışları: { 'YYYY-MM-DD': { tarih, kapatan, kapatildi_at, beklenen_* } }
-  const [kapanislar, setKapanislar] = useState({});
-  const [kapatMenuAcik, setKapatMenuAcik] = useState(false);
   const [secilenGiderKat, setSecilenGiderKat] = useState(null);
   const [aramaMetni, setAramaMetni] = useState('');
   const [acikSinavTarihi, setAcikSinavTarihi] = useState(null); // tıklanan sınav tarihi
@@ -781,30 +747,6 @@ export default function MuhasebeApp() {
     const gecmisKayitlar = kayitlar.filter((k) => etkinTarih(k) <= tarih);
     const k = kasaHesapla(gecmisKayitlar);
     return k.nakit + k.havale + k.pos;
-  };
-
-  // Gün sonu kapanışı: o güne kadar birikmiş kasayı fotoğraflayıp "kim kapattı" ile kaydeder.
-  const gunuKapat = async (tarih, kapatan) => {
-    const snap = kasaHesapla(kayitlar.filter((k) => etkinTarih(k) <= tarih));
-    const satir = {
-      tarih,
-      kapatan,
-      kapatildi_at: new Date().toISOString(),
-      beklenen_nakit: snap.nakit,
-      beklenen_havale: snap.havale,
-      beklenen_pos: snap.pos,
-    };
-    const { error } = await supabase.from('gun_kapanis').upsert(satir);
-    if (error) { setHataMesaji('Kapanış kaydedilemedi: ' + error.message); return; }
-    setKapanislar((onceki) => ({ ...onceki, [tarih]: satir }));
-    setKapatMenuAcik(false);
-    setSonKayitMesaji('Gün kapatıldı: ' + ((ISLEM_YAPAN.find((p) => p.id === kapatan)?.isim) || kapatan));
-  };
-
-  const gunuAc = async (tarih) => {
-    const { error } = await supabase.from('gun_kapanis').delete().eq('tarih', tarih);
-    if (error) { setHataMesaji('Kapanış açılamadı: ' + error.message); return; }
-    setKapanislar((onceki) => { const y = { ...onceki }; delete y[tarih]; return y; });
   };
 
   const gelirKategorileri = useMemo(() => {
@@ -2438,7 +2380,6 @@ export default function MuhasebeApp() {
               {Array.from({ length: ayBaslangicGunu }).map((_, i) => <div key={'bos' + i} />)}
               {gunlukVeri.map((g) => {
                 const aktif = g.kayitSayisi > 0;
-                const kapali = !!kapanislar[g.tarih];
                 const yogunluk = aktif ? 0.35 + 0.65 * (Math.abs(g.net) / maxAbsNet) : 1;
                 const renk = g.net > 0 ? C.mintDeep : g.net < 0 ? C.roseDeep : C.bg;
                 const yazi = g.net > 0 ? C.mint : g.net < 0 ? C.rose : C.textFaint;
@@ -2447,14 +2388,12 @@ export default function MuhasebeApp() {
                     key={g.tarih}
                     onClick={() => setSecilenGun(secilenGun === g.tarih ? null : g.tarih)}
                     style={{
-                      position: 'relative',
                       aspectRatio: '1', border: secilenGun === g.tarih ? `2px solid ${C.mint}` : `1px solid ${C.border}`,
                       borderRadius: 9, background: aktif ? renk : C.bg, opacity: aktif ? yogunluk : 0.45,
                       cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                       padding: 2, color: C.text,
                     }}
                   >
-                    {kapali && <CheckCircle size={11} style={{ position: 'absolute', top: 2, right: 2, color: C.mint, background: C.panel, borderRadius: '50%' }} />}
                     <div style={{ fontSize: 11, fontWeight: 700 }}>{g.gun}</div>
                     {aktif && <div style={{ fontSize: 8, color: yazi, fontWeight: 800, marginTop: 1, fontFamily: "'JetBrains Mono', monospace" }}>{g.net >= 0 ? '+' : ''}{(g.net / 1000).toFixed(1)}k</div>}
                   </button>
@@ -2476,47 +2415,6 @@ export default function MuhasebeApp() {
                     </div>
                   </div>
                 </div>
-
-                {/* --- Gün Sonu Kapanış --- */}
-                {(() => {
-                  const kap = kapanislar[secilenGun];
-                  if (kap) {
-                    return (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'rgba(5,150,105,0.10)', border: `1px solid rgba(5,150,105,0.35)`, borderRadius: 12, padding: '10px 14px', marginBottom: 14 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <CheckCircle size={20} style={{ color: C.mint, flexShrink: 0 }} />
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 800, color: C.mint }}>Gün Kapatıldı · Tutuyor</div>
-                            <div style={{ fontSize: 11, color: C.textDim, fontWeight: 600 }}>
-                              {(ISLEM_YAPAN.find((p) => p.id === kap.kapatan)?.isim) || kap.kapatan} · {new Date(kap.kapatildi_at).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          </div>
-                        </div>
-                        <button onClick={() => gunuAc(secilenGun)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textDim, borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Aç</button>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 14px', marginBottom: 14 }}>
-                      {!kapatMenuAcik ? (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                          <div style={{ fontSize: 12, color: C.textDim, fontWeight: 700 }}>Gün kapatılmadı</div>
-                          <button onClick={() => setKapatMenuAcik(true)} style={{ background: C.mint, border: 'none', color: '#fff', borderRadius: 8, padding: '8px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Günü Kapat</button>
-                        </div>
-                      ) : (
-                        <div>
-                          <div style={{ fontSize: 12, color: C.textDim, fontWeight: 700, marginBottom: 8 }}>Kim kapatıyor?</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            {ISLEM_YAPAN.map((p) => (
-                              <button key={p.id} onClick={() => gunuKapat(secilenGun, p.id)} style={{ background: C.panel, border: `1px solid ${C.mint}`, color: C.mint, borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{p.isim}</button>
-                            ))}
-                            <button onClick={() => setKapatMenuAcik(false)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textDim, borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Vazgeç</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
 
                 <div style={{ fontSize: 11, color: C.textDim, marginBottom: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gelen Ödemeler:</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
