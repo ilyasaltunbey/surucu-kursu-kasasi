@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus, TrendingUp, TrendingDown, Trash2, Wallet, Calendar, ChevronLeft, ChevronRight,
-  Car, Receipt, Banknote, CreditCard, ArrowLeftRight, Lock, Unlock, ArrowRight, Eye, EyeOff, X, BarChart3
+  Car, Receipt, Banknote, CreditCard, ArrowLeftRight, Lock, Unlock, ArrowRight, Eye, EyeOff, X, BarChart3, CheckCircle
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -407,6 +407,34 @@ export default function MuhasebeApp() {
     return () => { supabase.removeChannel(kanal); };
   }, []);
 
+  // Gün sonu kapanışlarını yükle
+  useEffect(() => {
+    const yukle = async () => {
+      const { data, error } = await supabase.from('gun_kapanis').select('*');
+      if (!error && data) {
+        const map = {};
+        data.forEach((r) => { map[r.tarih] = r; });
+        setKapanislar(map);
+      }
+    };
+    yukle();
+  }, []);
+
+  // Kapanışlarda gerçek zamanlı senkron (başka cihazdan kapatınca/açınca güncelle)
+  useEffect(() => {
+    const kanal = supabase
+      .channel('gun-kapanis-degisiklikleri')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gun_kapanis' }, (payload) => {
+        if (payload.eventType === 'DELETE') {
+          setKapanislar((onceki) => { const y = { ...onceki }; delete y[payload.old.tarih]; return y; });
+        } else {
+          setKapanislar((onceki) => ({ ...onceki, [payload.new.tarih]: payload.new }));
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(kanal); };
+  }, []);
 
   // Görünüm: 'giris' (sekreter) | 'rapor' (sahip, pin korumalı)
   const [ekran, setEkran] = useState('giris');
@@ -423,6 +451,14 @@ export default function MuhasebeApp() {
   const [secilenAy, setSecilenAy] = useState(ayAnahtari(bugun()));
   const [gorunum, setGorunum] = useState('ozet');
   const [secilenGun, setSecilenGun] = useState(null);
+  // Gün sonu kapanışları: { 'YYYY-MM-DD': { tarih, kapatan, kapatildi_at, beklenen_* } }
+  const [kapanislar, setKapanislar] = useState({});
+  const [kapatMenuAcik, setKapatMenuAcik] = useState(false);
+  // Günlük detayda tıklanan gelir kanalı (nakit/havale/pos) — dökümü açmak için
+  const [acikKanalGelir, setAcikKanalGelir] = useState(null);
+
+  // Gün değişince "kim kapatıyor" menüsünü ve açık kanalı kapat
+  useEffect(() => { setKapatMenuAcik(false); setAcikKanalGelir(null); }, [secilenGun]);
   const [secilenGiderKat, setSecilenGiderKat] = useState(null);
   const [aramaMetni, setAramaMetni] = useState('');
   const [acikSinavTarihi, setAcikSinavTarihi] = useState(null); // tıklanan sınav tarihi
@@ -749,6 +785,30 @@ export default function MuhasebeApp() {
     return k.nakit + k.havale + k.pos;
   };
 
+  // Gün sonu kapanışı: o güne kadar birikmiş kasayı fotoğraflayıp "kim kapattı" ile kaydeder.
+  const gunuKapat = async (tarih, kapatan) => {
+    const snap = kasaHesapla(kayitlar.filter((k) => etkinTarih(k) <= tarih));
+    const satir = {
+      tarih,
+      kapatan,
+      kapatildi_at: new Date().toISOString(),
+      beklenen_nakit: snap.nakit,
+      beklenen_havale: snap.havale,
+      beklenen_pos: snap.pos,
+    };
+    const { error } = await supabase.from('gun_kapanis').upsert(satir);
+    if (error) { setHataMesaji('Kapanış kaydedilemedi: ' + error.message); return; }
+    setKapanislar((onceki) => ({ ...onceki, [tarih]: satir }));
+    setKapatMenuAcik(false);
+    setSonKayitMesaji('Gün kapatıldı: ' + ((ISLEM_YAPAN.find((p) => p.id === kapatan)?.isim) || kapatan));
+  };
+
+  const gunuAc = async (tarih) => {
+    const { error } = await supabase.from('gun_kapanis').delete().eq('tarih', tarih);
+    if (error) { setHataMesaji('Kapanış açılamadı: ' + error.message); return; }
+    setKapanislar((onceki) => { const y = { ...onceki }; delete y[tarih]; return y; });
+  };
+
   const gelirKategorileri = useMemo(() => {
     const map = {};
     buAyKayitlar.filter((k) => k.tip === 'gelir' && k.odendiMi !== false).forEach((k) => { map[k.kategori] = (map[k.kategori] || 0) + k.kalan; });
@@ -871,6 +931,8 @@ export default function MuhasebeApp() {
   })();
 
   const secilenGunKayitlar = secilenGun ? kayitlar.filter((k) => etkinTarih(k) === secilenGun) : [];
+  // Gelirler bölümünde gösterilecek gerçek gelirler (devreden bakiye / kasa içi transfer gibi sistem satırları hariç)
+  const secilenGunGelirler = secilenGunKayitlar.filter((k) => k.tip === 'gelir' && !['devreden_bakiye', 'transfer_gelen'].includes(k.kategori));
   const kasaGun = secilenGun ? kasaHesapla(secilenGunKayitlar) : { nakit: 0, havale: 0, pos: 0 };
   const kasaGunGelir = secilenGun ? (() => {
     const s = { nakit: 0, havale: 0, pos: 0 };
@@ -2380,6 +2442,7 @@ export default function MuhasebeApp() {
               {Array.from({ length: ayBaslangicGunu }).map((_, i) => <div key={'bos' + i} />)}
               {gunlukVeri.map((g) => {
                 const aktif = g.kayitSayisi > 0;
+                const kapali = !!kapanislar[g.tarih];
                 const yogunluk = aktif ? 0.35 + 0.65 * (Math.abs(g.net) / maxAbsNet) : 1;
                 const renk = g.net > 0 ? C.mintDeep : g.net < 0 ? C.roseDeep : C.bg;
                 const yazi = g.net > 0 ? C.mint : g.net < 0 ? C.rose : C.textFaint;
@@ -2388,12 +2451,14 @@ export default function MuhasebeApp() {
                     key={g.tarih}
                     onClick={() => setSecilenGun(secilenGun === g.tarih ? null : g.tarih)}
                     style={{
+                      position: 'relative',
                       aspectRatio: '1', border: secilenGun === g.tarih ? `2px solid ${C.mint}` : `1px solid ${C.border}`,
                       borderRadius: 9, background: aktif ? renk : C.bg, opacity: aktif ? yogunluk : 0.45,
                       cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                       padding: 2, color: C.text,
                     }}
                   >
+                    {kapali && <CheckCircle size={11} style={{ position: 'absolute', top: 2, right: 2, color: C.mint, background: C.panel, borderRadius: '50%' }} />}
                     <div style={{ fontSize: 11, fontWeight: 700 }}>{g.gun}</div>
                     {aktif && <div style={{ fontSize: 8, color: yazi, fontWeight: 800, marginTop: 1, fontFamily: "'JetBrains Mono', monospace" }}>{g.net >= 0 ? '+' : ''}{(g.net / 1000).toFixed(1)}k</div>}
                   </button>
@@ -2416,22 +2481,84 @@ export default function MuhasebeApp() {
                   </div>
                 </div>
 
-                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gelen Ödemeler:</div>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                {/* --- Gün Sonu Kapanış --- */}
+                {(() => {
+                  const kap = kapanislar[secilenGun];
+                  if (kap) {
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'rgba(5,150,105,0.10)', border: `1px solid rgba(5,150,105,0.35)`, borderRadius: 12, padding: '10px 14px', marginBottom: 14 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <CheckCircle size={20} style={{ color: C.mint, flexShrink: 0 }} />
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: C.mint }}>Gün Kapatıldı · Tutuyor</div>
+                            <div style={{ fontSize: 11, color: C.textDim, fontWeight: 600 }}>
+                              {(ISLEM_YAPAN.find((p) => p.id === kap.kapatan)?.isim) || kap.kapatan} · {new Date(kap.kapatildi_at).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        </div>
+                        <button onClick={() => gunuAc(secilenGun)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textDim, borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Aç</button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 14px', marginBottom: 14 }}>
+                      {!kapatMenuAcik ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <div style={{ fontSize: 12, color: C.textDim, fontWeight: 700 }}>Gün kapatılmadı</div>
+                          <button onClick={() => setKapatMenuAcik(true)} style={{ background: C.mint, border: 'none', color: '#fff', borderRadius: 8, padding: '8px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Günü Kapat</button>
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ fontSize: 12, color: C.textDim, fontWeight: 700, marginBottom: 8 }}>Kim kapatıyor?</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {ISLEM_YAPAN.map((p) => (
+                              <button key={p.id} onClick={() => gunuKapat(secilenGun, p.id)} style={{ background: C.panel, border: `1px solid ${C.mint}`, color: C.mint, borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{p.isim}</button>
+                            ))}
+                            <button onClick={() => setKapatMenuAcik(false)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textDim, borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Vazgeç</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gelen Ödemeler: <span style={{ textTransform: 'none', color: C.textFaint, fontWeight: 600 }}>(detay için tıkla)</span></div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: acikKanalGelir ? 8 : 14 }}>
                   {[
                     { label: 'Nakit', icon: Banknote, key: 'nakit' },
                     { label: 'Havale', icon: ArrowLeftRight, key: 'havale' },
                     { label: 'POS', icon: CreditCard, key: 'pos' },
-                  ].map(({ label, icon: Icon, key }) => (
-                    <div key={'gelir_' + key} style={{ flex: 1, background: 'rgba(5,150,105,0.05)', borderRadius: 14, padding: '12px 10px', border: '1px solid rgba(5,150,105,0.25)' }}>
+                  ].map(({ label, icon: Icon, key }) => {
+                    const acik = acikKanalGelir === key;
+                    return (
+                    <button key={'gelir_' + key} onClick={() => setAcikKanalGelir(acik ? null : key)} style={{ flex: 1, textAlign: 'left', cursor: 'pointer', background: acik ? 'rgba(5,150,105,0.14)' : 'rgba(5,150,105,0.05)', borderRadius: 14, padding: '12px 10px', border: `1px solid ${acik ? C.mint : 'rgba(5,150,105,0.25)'}` }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
                         <Icon size={12} style={{ color: C.mint }} />
                         <span style={{ fontSize: 10, color: C.mint, fontWeight: 700, textTransform: 'uppercase' }}>{label}</span>
                       </div>
                       <div style={{ fontSize: 14, color: C.mint, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>+{fmt(kasaGunGelir[key])}</div>
-                    </div>
-                  ))}
+                    </button>
+                  );})}
                 </div>
+
+                {/* Seçilen kanalın döküm listesi */}
+                {acikKanalGelir && (() => {
+                  const kanalKayitlar = secilenGunKayitlar.filter(k => k.tip === 'gelir' && k.odendiMi !== false && k.odeme === acikKanalGelir);
+                  const kanalAd = ODEME_TIPLERI.find(o => o.id === acikKanalGelir)?.isim || acikKanalGelir;
+                  return (
+                    <div style={{ background: 'rgba(5,150,105,0.04)', border: `1px solid rgba(5,150,105,0.2)`, borderRadius: 12, padding: '10px 12px', marginBottom: 14 }}>
+                      <div style={{ fontSize: 10, color: C.mint, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>{kanalAd} — gelen ödemeler</div>
+                      {kanalKayitlar.length === 0 ? (
+                        <div style={{ fontSize: 12, color: C.textFaint }}>Bu kanaldan bu gün ödeme yok.</div>
+                      ) : kanalKayitlar.map((k) => (
+                        <div key={k.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
+                          <span style={{ fontSize: 12, fontWeight: 600 }}>{k.aciklama} <span style={{ color: C.textFaint, fontWeight: 500 }}>· {katAdi(k.kategori, GELIR_KATEGORILERI)}</span></span>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: C.mint, fontFamily: "'JetBrains Mono', monospace" }}>+{fmt(k.kategori === 'harc' ? k.tutar : k.kalan)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 <div style={{ fontSize: 11, color: C.textDim, marginBottom: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Giden Ödemeler:</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
@@ -2470,10 +2597,10 @@ export default function MuhasebeApp() {
                 {secilenGunKayitlar.length === 0 && <div style={{ color: C.textFaint, fontSize: 13 }}>Bu gün için kayıt yok.</div>}
 
                 {/* Gelirler */}
-                {secilenGunKayitlar.filter(k => k.tip === 'gelir').length > 0 && (
+                {secilenGunGelirler.length > 0 && (
                   <>
                     <div style={{ fontSize: 11, fontWeight: 700, color: C.mint, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Gelirler</div>
-                    {secilenGunKayitlar.filter(k => k.tip === 'gelir').map((k) => (
+                    {secilenGunGelirler.map((k) => (
                       <div key={k.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span style={{ fontSize: 13, fontWeight: 600 }}>
@@ -2486,11 +2613,11 @@ export default function MuhasebeApp() {
                             )}
                           </span>
                           <span style={{ fontWeight: 800, fontSize: 13, color: k.odendiMi === false ? C.textFaint : C.mint, fontFamily: "'JetBrains Mono', monospace" }}>
-                            +{fmt(k.kategori === 'harc' ? k.tutar : k.kalan)}
+                            +{fmt(k.kalan)}
                           </span>
                         </div>
                         <div style={{ fontSize: 11, color: C.textFaint }}>
-                          {katAdi(k.kategori, GELIR_KATEGORILERI)}{k.kategori === 'harc' ? ` · Kursa: ${fmt(k.kalan)}` : ''} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.not ? ` · ${k.not}` : ''}
+                          {katAdi(k.kategori, GELIR_KATEGORILERI)} · {ODEME_TIPLERI.find(o=>o.id===k.odeme)?.isim}{k.egitmen ? ` · ${egitmenAdi(k.egitmen)}` : ''}{k.arac ? ` · ${aracAdi(k.arac)}` : ''}{k.not ? ` · ${k.not}` : ''}
                         </div>
                       </div>
                     ))}
