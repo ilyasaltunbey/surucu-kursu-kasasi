@@ -766,8 +766,18 @@ export default function MuhasebeApp() {
       map[k.sinavTarihi].toplam++;
       if (k.odendiMi === false) map[k.sinavTarihi].veresiye++;
     });
-    return Object.entries(map).sort((a, b) => b[1].toplam - a[1].toplam);
-  }, [kayitlar]);
+    // Sadece son bir ay (ve ileri tarihli) sınavları göster
+    const birAyOnce = new Date();
+    birAyOnce.setDate(birAyOnce.getDate() - 30);
+    const esikTarih = `${birAyOnce.getFullYear()}-${String(birAyOnce.getMonth() + 1).padStart(2, '0')}-${String(birAyOnce.getDate()).padStart(2, '0')}`;
+    const sinavGuncel = (etiket) => {
+      const sinavObj = SINAV_TARIHLERI.find((s) => s.etiket === etiket);
+      return !!sinavObj && sinavObj.tarih >= esikTarih;
+    };
+    return Object.entries(map)
+      .filter(([etiket]) => sinavGuncel(etiket))
+      .sort((a, b) => b[1].toplam - a[1].toplam);
+  }, [kayitlar, SINAV_TARIHLERI]);
 
   const kasaHesapla = (kayitlarListesi) => {
     const sonuc = { nakit: 0, havale: 0, pos: 0 };
