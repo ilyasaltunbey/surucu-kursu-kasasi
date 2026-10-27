@@ -463,6 +463,7 @@ export default function MuhasebeApp() {
   });
   const [secilenAy, setSecilenAy] = useState(ayAnahtari(bugun()));
   const [gorunum, setGorunum] = useState('ozet');
+  const [acikGiderKat, setAcikGiderKat] = useState(null);
   const [secilenGun, setSecilenGun] = useState(null);
   // Gün sonu kapanışları: { 'YYYY-MM-DD': { tarih, kapatan, kapatildi_at, beklenen_* } }
   const [kapanislar, setKapanislar] = useState({});
@@ -1929,6 +1930,7 @@ export default function MuhasebeApp() {
           {[
             { k: 'ozet', l: 'Aylık Özet' },
             { k: 'gunluk', l: 'Günlük Özet' },
+            { k: 'giderler', l: 'Giderler' },
             { k: 'egitmen', l: 'Eğitmen/Araç' },
             { k: 'ayarlar', l: 'Ayarlar' },
           ].map((v) => (
@@ -2373,6 +2375,50 @@ export default function MuhasebeApp() {
               )}
             </div>
           </>
+        )}
+
+        {gorunum === 'giderler' && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 14 }}>
+              {giderKategorileri.length === 0 && (
+                <div style={{ color: C.textFaint, fontSize: 13, gridColumn: '1 / -1' }}>Bu ay için gider yok.</div>
+              )}
+              {giderKategorileri.map((g) => {
+                const acik = acikGiderKat === g.id;
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => setAcikGiderKat(acik ? null : g.id)}
+                    style={{
+                      background: acik ? C.blue : C.panel,
+                      border: `1px solid ${acik ? C.blue : C.border}`,
+                      borderRadius: 12, padding: '12px 10px', cursor: 'pointer', textAlign: 'left',
+                      color: acik ? '#FFFFFF' : C.text,
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.85 }}>{g.isim}</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>{fmt(g.tutar)}</div>
+                  </button>
+                );
+              })}
+            </div>
+            {acikGiderKat && (
+              <div style={{ background: C.panel, borderRadius: 14, padding: '12px 14px', border: `1px solid ${C.border}` }}>
+                {buAyKayitlar
+                  .filter((k) => k.tip === 'gider' && k.kategori === acikGiderKat)
+                  .sort((a, b) => (a.tarih < b.tarih ? -1 : 1))
+                  .map((k) => (
+                    <div key={k.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${C.border}` }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{k.aciklama || katAdi(k.kategori, GIDER_KATEGORILERI)}</div>
+                        <div style={{ fontSize: 11, color: C.textFaint }}>{k.tarih} · {ODEME_TIPLERI.find((o) => o.id === k.odeme)?.isim}</div>
+                      </div>
+                      <span style={{ fontWeight: 800, fontSize: 13, color: C.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(k.kalan)}</span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
         )}
 
         {gorunum === 'gunluk' && (
