@@ -371,15 +371,28 @@ export default function MuhasebeApp() {
   useEffect(() => {
     const yukle = async () => {
       setYukleniyor(true);
-      const { data, error } = await supabase
-        .from('kayitlar')
-        .select('*')
-        .order('tarih', { ascending: true });
+      // Supabase varsayılan olarak en fazla 1000 satır döner; tüm sayfaları çekiyoruz
+      const sayfa = 1000;
+      let tumu = [];
+      let bas = 0;
+      let hata = null;
+      while (true) {
+        const { data, error } = await supabase
+          .from('kayitlar')
+          .select('*')
+          .order('tarih', { ascending: true })
+          .order('id', { ascending: true })
+          .range(bas, bas + sayfa - 1);
+        if (error) { hata = error; break; }
+        tumu = tumu.concat(data);
+        if (data.length < sayfa) break;
+        bas += sayfa;
+      }
 
-      if (error) {
-        setHataMesaji('Veriler yüklenemedi: ' + error.message);
+      if (hata) {
+        setHataMesaji('Veriler yüklenemedi: ' + hata.message);
       } else {
-        setKayitlar(data.map(dbdenKayit));
+        setKayitlar(tumu.map(dbdenKayit));
       }
       setYukleniyor(false);
     };
